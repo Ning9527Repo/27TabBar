@@ -268,9 +268,10 @@ private struct TabData: Equatable {
               let index = items.firstIndex(where: { $0 === selected }) else {
             NGSystemTabNote("selected-item-gate", bar); detach(bar); return
         }
-        guard let buttons = NGSystemTabControls(bar, items.count), buttons[index].isSelected else {
+        guard let buttons = NGSystemTabControls(bar, items.count) else {
             NGSystemTabNote("native-buttons-gate", bar); detach(bar); return
         }
+        if !buttons[index].isSelected { NGSystemTabNote("native-selected-mismatch", bar) }
         guard Bundle.hasTabMetalResources, !TheseusSettings.shared.shouldUseFallback,
               UIApplication.shared.isProtectedDataAvailable,
               MetalContext.shared != nil else {
