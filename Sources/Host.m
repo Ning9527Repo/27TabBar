@@ -3,6 +3,7 @@
 #import <dispatch/dispatch.h>
 #import <dlfcn.h>
 #import <math.h>
+#import <objc/message.h>
 
 // The implementation lives in Swift; this narrow ObjC interface avoids importing a
 // generated Swift header into the bridging header's own module.
@@ -16,7 +17,7 @@ typedef UIView *(*NGHitIMP)(UITabBar *, SEL, CGPoint, UIEvent *);
 static NGHitIMP NGOrigHit;
 
 static UIView *NGHit(UITabBar *bar, SEL cmd, CGPoint pt, UIEvent *event) {
-    if (NSThread.isMainThread && object_getClass(bar) == UITabBar.class &&
+    if (NSThread.isMainThread && [bar isKindOfClass:UITabBar.class] &&
         [NGSystemTabsBridge usesOverlay:bar]) return nil;
     return NGOrigHit(bar, cmd, pt, event);
 }
@@ -40,16 +41,29 @@ static BOOL NGInstallHit(Class cls) {
 }
 
 static const UIControlEvents kNGPrimary = UIControlEventPrimaryActionTriggered;
-static BOOL NGHasAction(UIControl *control, UIControlEvents event) {
-    for (id target in control.allTargets) {
-        if ([control actionsForTarget:target == NSNull.null ? nil : target forControlEvent:event].count) return YES;
-    }
-    return NO;
+static UIControlEvents NGActivationEvent(UIControl *control) {
+    UIControlEvents events = control.allControlEvents;
+    if (events & kNGPrimary) return kNGPrimary;
+    if (events & UIControlEventTouchUpInside) return UIControlEventTouchUpInside;
+    return 0;
 }
 
-static UIControlEvents NGActivationEvent(UIControl *control) {
-    if (NGHasAction(control, UIControlEventTouchUpInside)) return UIControlEventTouchUpInside;
-    return NGHasAction(control, kNGPrimary) ? kNGPrimary : 0;
+void NGSystemTabNote(NSString *reason, UITabBar *bar) {
+    static NSMutableDictionary<NSString *, NSNumber *> *counts;
+    if (!NSThread.isMainThread) return;
+    if (!counts) counts = [NSMutableDictionary dictionary];
+    NSString *key = [NSString stringWithFormat:@"%@/%@", reason, bar ? NSStringFromClass(object_getClass(bar)) : @"process"];
+    NSInteger count = [counts[key] integerValue];
+    if (count >= 8) return;
+    counts[key] = @(count + 1);
+    NSString *line = [NSString stringWithFormat:@"%@ %@ bars=%lu selected=%@ view=%.0fx%.0f\n", [NSDate date], key, (unsigned long)bar.items.count, bar.selectedItem ? @"yes" : @"no", bar.bounds.size.width, bar.bounds.size.height];
+    NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Caches/TheseusSystemTabs.log"];
+    NSFileManager *fm = NSFileManager.defaultManager;
+    [fm createDirectoryAtPath:path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
+    if (![fm fileExistsAtPath:path]) [fm createFileAtPath:path contents:nil attributes:nil];
+    NSFileHandle *fd = [NSFileHandle fileHandleForWritingAtPath:path];
+    @try { [fd seekToEndOfFile]; [fd writeData:[line dataUsingEncoding:NSUTF8StringEncoding]]; } @catch (NSException *e) { (void)e; }
+    [fd closeFile];
 }
 
 NSArray<UIControl *> *NGSystemTabControls(UITabBar *bar, NSInteger expectedCount) {
@@ -63,7 +77,7 @@ NSArray<UIControl *> *NGSystemTabControls(UITabBar *bar, NSInteger expectedCount
         UIView *view = queue[index];
         if (view.hidden) continue;
         if ([view isKindOfClass:button] && [view isKindOfClass:UIControl.class]) {
-            if (CGRectIsEmpty(view.bounds) || !NGActivationEvent((UIControl *)view)) return nil;
+            if (CGRectIsEmpty(view.bounds)) return nil;
             [controls addObject:(UIControl *)view];
         } else {
             [queue addObjectsFromArray:view.subviews];
@@ -89,9 +103,22 @@ NSArray<UIControl *> *NGSystemTabControls(UITabBar *bar, NSInteger expectedCount
     return controls;
 }
 
-BOOL NGActivateSystemTabControl(UIControl *control) {
+BOOL NGActivateSystemTabControl(UITabBar *bar, UIControl *control) {
+    if (!bar || !control || !control.enabled || !control.window || !bar.window) return NO;
+    // UIKit handles selection before dispatching its private control event.
+    SEL buttonUp = NSSelectorFromString(@"_buttonUp:");
+    Method method = class_getInstanceMethod(object_getClass(bar), buttonUp);
+    if (method && method_getNumberOfArguments(method) == 3) {
+        char ret[8] = {0}, arg[8] = {0};
+        method_getReturnType(method, ret, sizeof(ret));
+        method_getArgumentType(method, 2, arg, sizeof(arg));
+        if (ret[0] == 'v' && arg[0] == '@') {
+            ((void (*)(id, SEL, id))objc_msgSend)(bar, buttonUp, control);
+            return YES;
+        }
+    }
     UIControlEvents event = NGActivationEvent(control);
-    if (!control.enabled || !control.window || event == 0) return NO;
+    if (!event) { NGSystemTabNote(@"no-button-action", bar); return NO; }
     [control sendActionsForControlEvents:event];
     return YES;
 }
@@ -104,7 +131,7 @@ NSString *NGTabResourceBundlePath(void) {
 }
 
 static BOOL NGIsBaseBar(UITabBar *bar) {
-    return NSThread.isMainThread && object_getClass(bar) == UITabBar.class;
+    return NSThread.isMainThread && [bar isKindOfClass:UITabBar.class];
 }
 
 static void (*NGOrigLayout)(UITabBar *, SEL);
@@ -113,7 +140,10 @@ static void (*NGOrigSelected)(UITabBar *, SEL, UITabBarItem *);
 
 static void NGLayout(UITabBar *bar, SEL cmd) {
     NGOrigLayout(bar, cmd);
-    if (NGIsBaseBar(bar)) [NGSystemTabsBridge update:bar];
+    if (NGIsBaseBar(bar)) {
+        NGSystemTabNote(@"layout", bar);
+        [NGSystemTabsBridge update:bar];
+    }
 }
 
 static void NGWindow(UITabBar *bar, SEL cmd) {
@@ -150,15 +180,17 @@ static void NGInstall(Class cls, SEL sel, IMP replacement, IMP *original, unsign
 }
 
 __attribute__((constructor)) static void NGStart(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{ NGSystemTabNote(@"loaded", nil); });
     NSBundle *main = NSBundle.mainBundle;
     NSString *identifier = main.bundleIdentifier;
     if (![main.bundlePath.pathExtension isEqualToString:@"app"] || !identifier.length ||
         [identifier hasPrefix:@"com.tencent.xin"] || [identifier isEqualToString:@"com.apple.springboard"]) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         Class cls = UITabBar.class;
-        if (!NGInstallHit(cls)) return;
+        if (!NGInstallHit(cls)) { NGSystemTabNote(@"hit-hook-rejected", nil); return; }
         NGInstall(cls, @selector(layoutSubviews), (IMP)NGLayout, (IMP *)&NGOrigLayout, 2);
         NGInstall(cls, @selector(didMoveToWindow), (IMP)NGWindow, (IMP *)&NGOrigWindow, 2);
         NGInstall(cls, @selector(setSelectedItem:), (IMP)NGSelected, (IMP *)&NGOrigSelected, 3);
+        NGSystemTabNote(NGOrigLayout ? @"hooks-installed" : @"layout-hook-rejected", nil);
     });
 }

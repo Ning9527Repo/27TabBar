@@ -181,7 +181,9 @@ private struct TabData: Equatable {
             }
         }
         guard items[index].isEnabled else { return }
-        _ = NGActivateSystemTabControl(buttons[index])
+        if !NGActivateSystemTabControl(bar, buttons[index]) {
+            NGSystemTabNote("native-action-rejected", bar)
+        }
     }
 }
 
@@ -207,11 +209,13 @@ private struct TabData: Equatable {
         guard states.object(forKey: bar) === state, state.glass.superview === bar.superview,
               state.glass.window != nil, bar.layer.mask == nil else { return }
         state.reveal(in: bar)
+        NGSystemTabNote("glass-presented", bar)
     }
 
     fileprivate static func expire(_ state: SystemTabsState, for bar: UITabBar) {
         guard states.object(forKey: bar) === state, !state.isPresented else { return }
         failed.add(bar)
+        NGSystemTabNote("metal-first-frame-timeout", bar)
         detach(bar)
     }
 
@@ -255,16 +259,23 @@ private struct TabData: Equatable {
               UIApplication.shared.applicationState != .background,
               let win = bar.window, let parent = bar.superview, visible(bar, through: win),
               bar.isUserInteractionEnabled, !bar.isCustomizing,
-              bar.layer.mask == nil || bar.layer.mask === previous?.nativeMask,
-              let frame = layoutFrame(for: bar, in: win, parent: parent),
-              let items = bar.items, let selected = bar.selectedItem,
-              let index = items.firstIndex(where: { $0 === selected }),
-              let buttons = NGSystemTabControls(bar, items.count), buttons[index].isSelected
-        else { detach(bar); return }
-
+              bar.layer.mask == nil || bar.layer.mask === previous?.nativeMask
+        else { NGSystemTabNote("visibility-gate", bar); detach(bar); return }
+        guard let frame = layoutFrame(for: bar, in: win, parent: parent) else {
+            NGSystemTabNote("geometry-gate", bar); detach(bar); return
+        }
+        guard let items = bar.items, let selected = bar.selectedItem,
+              let index = items.firstIndex(where: { $0 === selected }) else {
+            NGSystemTabNote("selected-item-gate", bar); detach(bar); return
+        }
+        guard let buttons = NGSystemTabControls(bar, items.count), buttons[index].isSelected else {
+            NGSystemTabNote("native-buttons-gate", bar); detach(bar); return
+        }
         guard Bundle.hasTabMetalResources, !TheseusSettings.shared.shouldUseFallback,
               UIApplication.shared.isProtectedDataAvailable,
-              MetalContext.shared != nil else { detach(bar); return }
+              MetalContext.shared != nil else {
+            NGSystemTabNote("metal-gate", bar); detach(bar); return
+        }
         let tabs = zip(items, buttons).map { TabData($0.0, $0.1) }
         let state: SystemTabsState
         if let previous, previous.glass.superview === parent {
