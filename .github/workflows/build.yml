@@ -1,0 +1,38 @@
+name: Build iOS deb
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: Package variant
+        type: choice
+        default: roothide
+        options:
+          - roothide
+          - rootless
+          - both
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check pinned sources and adapter
+        run: python3 tests/check_source.py
+      - name: Check Xcode Metal toolchain
+        run: |
+          xcodebuild -version
+          if ! xcrun --sdk iphoneos metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+            xcrun --sdk iphoneos metal --version
+          fi
+      - name: Compile, sign and verify deb
+        run: python3 tools/build.py --targets "$TARGETS"
+        env:
+          TARGETS: ${{ inputs.targets }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: theseus-system-tabs-${{ inputs.targets }}
+          path: dist/
+          if-no-files-found: error
