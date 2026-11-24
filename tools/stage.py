@@ -90,9 +90,9 @@ def tabbar(s):
 
     private func ngLayoutBadge(_ label: UILabel, beside icon: CGRect, width: CGFloat) {
         guard !label.isHidden else { return }
-        let textWidth = label.sizeThatFits(CGSize(width: .greatestFiniteMagnitude, height: 16)).width
-        let w = min(max(16, textWidth + 8), max(16, width - 4))
-        let end = min(width - 1, icon.midX + 9 + w / 2)
+        let textWidth: CGFloat = label.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat(16))).width
+        let w: CGFloat = min(max(16, textWidth + 8), max(16, width - 4))
+        let end: CGFloat = min(width - 1, icon.midX + 9 + w / 2)
         label.frame = CGRect(x: max(0, end - w), y: max(0, icon.minY - 2), width: w, height: 16)
     }''')
     s = replace(s, '        captureTwin.addSubview(captureTitleView)', '''        captureTwin.addSubview(captureTitleView)
