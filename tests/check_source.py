@@ -28,6 +28,10 @@ def check():
     assert hashlib.sha256(original).hexdigest() == expected_shader
     with tempfile.TemporaryDirectory(prefix='systemtabs-source-') as temp:
         temp = Path(temp)
+        geometry = temp/'test-native-geometry'
+        subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror',
+            str(ROOT/'tests/test_native_geometry.c'),'-lm','-o',str(geometry)], check=True)
+        subprocess.run([str(geometry)], check=True)
         a, b = temp/'a', temp/'b'
         stage(a)
         stage(b)
