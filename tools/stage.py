@@ -29,55 +29,13 @@ def tabbar(s):
     var ngGlassDidPresent: (() -> Void)? {
         didSet { backgroundGlassView.onPresent = ngGlassDidPresent }
     }
-    private let ngNativeButtons = NSHashTable<UIView>.weakObjects()
-    private let ngNativeBackgrounds = NSHashTable<UIView>.weakObjects()
-    private var ngNativeBitmaps: [(view: UIView, image: UIImage, hidden: Bool)] = []
+
+    func ngPrepareReplacement() {
+        backgroundGlassView.ngPrepareReplacement()
+        selectionView.ngPrepareReplacement()
+    }
+
     var ngHostIsInteracting: Bool { isDragging }
-
-    func ngBindNativeViews(_ buttons: [UIView], backgrounds: [UIView]) {
-        ngNativeButtons.removeAllObjects()
-        ngNativeBackgrounds.removeAllObjects()
-        buttons.forEach { ngNativeButtons.add($0) }
-        backgrounds.forEach { ngNativeBackgrounds.add($0) }
-        let excluded: [UIView] = [self] + buttons + backgrounds + [theseusView].compactMap { $0 }
-        backgroundGlassView.setCaptureExcludedViews(excluded)
-        selectionView.setCaptureExcludedViews(excluded)
-        theseusView?.setCaptureExcludedViews(buttons)
-        itemsContainerView?.isHidden = true
-        accessibilityElements = []
-    }
-
-    func ngCancelNativeInteraction() { endDragImmediately() }
-
-    func ngFinishNativePress(_ nativeIndex: Int) {
-        guard isDragging, nativeIndex >= 0, nativeIndex < slotFrames.count else { return }
-        let callback = onItemSelected
-        onItemSelected = nil
-        defer { onItemSelected = callback }
-        // UIKit already handled the tap. Collapse the original lens without
-        // synthesizing another button action.
-        finishInteraction(rawX: slotFrame(at: nativeIndex).midX - fingerAnchorOffset)
-    }
-
-    private func ngNativeCapture(_ begin: Bool) {
-        if begin {
-            guard ngNativeBitmaps.isEmpty else { return }
-            for button in ngNativeButtons.allObjects where !button.isHidden && !button.bounds.isEmpty {
-                let format = UIGraphicsImageRendererFormat()
-                format.scale = button.window?.screen.scale ?? UIScreen.main.scale
-                format.opaque = false
-                let image = UIGraphicsImageRenderer(size: button.bounds.size, format: format).image { output in
-                    output.cgContext.translateBy(x: -button.bounds.minX, y: -button.bounds.minY)
-                    button.layer.render(in: output.cgContext)
-                }
-                ngNativeBitmaps.append((button, image, button.isHidden))
-                button.isHidden = true
-            }
-        } else {
-            for entry in ngNativeBitmaps { entry.view.isHidden = entry.hidden }
-            ngNativeBitmaps.removeAll()
-        }
-    }
 
     func ngApplyHostFrame(_ next: CGRect) {
         if isDragging { endDragImmediately() }
@@ -94,45 +52,21 @@ def tabbar(s):
     var ngLabel: String?
     var ngEnabled = true
 ''')
-    # Keep the upstream compact capsule; host positioning changes only the outer frame.
+    s = replace(s, '        let contentWidth = min(bounds.width,', '        if ngUseHostPosition { return bounds }\n        let contentWidth = min(bounds.width,')
+    s = replace(s, '        let size = pillSize\n', '        let base = pillSize\n        let size = CGSize(width: ngUseHostPosition ? max(base.width, itemFrame.width - 4) : base.width, height: base.height)\n')
+    s = replace(s, '        let size = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize\n', '        let base = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize\n        let size = CGSize(width: ngUseHostPosition ? max(base.width, selectionFrame(for: itemFrame).width + 16) : base.width, height: base.height)\n')
     s = replace(s, '        super.layoutSubviews()\n\n        contentView.bounds = bounds', '''        super.layoutSubviews()
 
-        let buttons = ngNativeButtons.allObjects
-        let exclusions: [UIView] = [self] + buttons + ngNativeBackgrounds.allObjects + [theseusView].compactMap { $0 }
+        let exclusions = [self, ngExcludedBar].compactMap { $0 }
         backgroundGlassView.setCaptureExcludedViews(exclusions)
         selectionView.setCaptureExcludedViews(exclusions)
-        theseusView?.setCaptureExcludedViews(buttons)
-        itemsContainerView?.isHidden = ngUseHostPosition
+        if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }
         contentView.bounds = bounds''')
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
             return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: 0, width: itemWidth, height: itemHeight)''')
-    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? ngExcludedBar : theseusSourceView?.superview\n')
-    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        glassView.setCaptureExcludedViews(ngNativeButtons.allObjects)\n        glassView.isHidden')
-    s = replace(s, '            self?.showCaptureTint(true)', '            if self?.ngUseHostPosition == true { self?.ngNativeCapture(true) }\n            else { self?.showCaptureTint(true) }')
-    s = replace(s, '            self?.showCaptureTint(false)', '            if self?.ngUseHostPosition == true { self?.ngNativeCapture(false) }\n            else { self?.showCaptureTint(false) }')
-    s = replace(s, '        guard itemsHiddenForCapture else { return }\n        Self.render', '''        if ngUseHostPosition {
-            for entry in ngNativeBitmaps {
-                let transform = Self.affineTransform(from: entry.view, to: sourceView)
-                context.saveGState()
-                context.concatenate(transform)
-                entry.image.draw(in: entry.view.bounds)
-                context.restoreGState()
-            }
-            return
-        }
-        guard itemsHiddenForCapture else { return }
-        Self.render''')
-    s = replace(s, '        glassView.resumeRendering()\n', '        if ngUseHostPosition { container.bringSubviewToFront(glassView) }\n        glassView.resumeRendering()\n')
-    s = replace(s, '        theseusView = glassView\n        applyAdaptiveOverride()', '''        theseusView = glassView
-        if ngUseHostPosition {
-            let excluded: [UIView] = [self, glassView] + ngNativeButtons.allObjects + ngNativeBackgrounds.allObjects
-            backgroundGlassView.setCaptureExcludedViews(excluded)
-            selectionView.setCaptureExcludedViews(excluded)
-        }
-        applyAdaptiveOverride()''')
-    s = replace(s, '        guard !isDragging, isUserInteractionEnabled else { return }', '        guard !isDragging, isUserInteractionEnabled || ngUseHostPosition else { return }')
-    s = replace(s, '        contentView.bringSubviewToFront(container)\n        if captureTwinRow', '        if ngUseHostPosition { container.isHidden = true; accessibilityElements = [] }\n        contentView.bringSubviewToFront(container)\n        if captureTwinRow')
+    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? self : theseusSourceView?.superview\n')
+    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }\n        glassView.isHidden')
     s = replace(s, '''        guard index != selectedIndex else { return }
         selectedIndex = index
         onItemSelected?(index)''', '''        guard items.indices.contains(index), items[index].ngEnabled else { return }
@@ -159,12 +93,6 @@ def tabbar(s):
             isCommittingDrag = false
             if shouldSend { onItemSelected?(landingIndex) }
         }''')
-    s = replace(s, '''            if landingIndex < self.slotFrames.count {
-                animator?.retarget(to: self.convertToTheseusContainer(self.selectionFrame(for: self.slotFrame(at: landingIndex))))
-            }''', '''            let current = self.selectedIndex
-            if current >= 0 && current < self.slotFrames.count {
-                animator?.retarget(to: self.convertToTheseusContainer(self.selectionFrame(for: self.slotFrame(at: current))))
-            }''')
     s = replace(s, '    private let captureTitleView = UIImageView()', '''    private let captureTitleView = UIImageView()
     private let ngBadgeLabel = UILabel()
     private let ngTwinBadge = UILabel()
@@ -213,6 +141,45 @@ def renderer(s):
 
 
 def surface(s):
+    s = replace(s, '    public var onPresent: (() -> Void)? {\n        didSet { renderer?.onPresent = onPresent }\n    }', '''    private var ngWaitingForPresent = false
+    private var ngPresented = false
+
+    func ngPrepareReplacement() {
+        ngWaitingForPresent = !ngPresented
+        guard ngWaitingForPresent else { return }
+        if fallbackView == nil {
+            let fallback = VisualEffectFallbackView()
+            fallback.isUserInteractionEnabled = false
+            fallback.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            fallback.frame = bounds
+            insertSubview(fallback, at: 0)
+            fallbackView = fallback
+        }
+        fallbackView?.configure(with: configuration)
+        fallbackView?.updateForTraitCollection(traitCollection)
+        fallbackView?.isHidden = false
+        ngConfigurePresentCallback()
+    }
+
+    private func ngConfigurePresentCallback() {
+        if ngWaitingForPresent || onPresent != nil {
+            renderer?.onPresent = { [weak self] in self?.ngFramePresented() }
+        } else { renderer?.onPresent = nil }
+    }
+
+    private func ngFramePresented() {
+        ngPresented = true
+        ngWaitingForPresent = false
+        if !isUsingFallback { fallbackView?.isHidden = true }
+        onPresent?()
+        ngConfigurePresentCallback()
+    }
+
+    public var onPresent: (() -> Void)? {
+        didSet { ngConfigurePresentCallback() }
+    }''')
+    s = replace(s, '        renderer?.onPresent = onPresent\n', '        ngConfigurePresentCallback()\n')
+    s = replace(s, '            fallbackView?.isHidden = true\n\n            metalLayerView?.isHidden = false', '            fallbackView?.isHidden = !ngWaitingForPresent\n\n            metalLayerView?.isHidden = false')
     # Match drawable geometry to the padded Metal texture. Keep the shader's
     # logical host bounds and account for padding exactly once in capture.
     s = replace(s, '        return (metalLayerView?.frame ?? bounds).insetBy(dx: -padding.x, dy: -padding.y)', '        return bounds.insetBy(dx: -padding.x, dy: -padding.y)')

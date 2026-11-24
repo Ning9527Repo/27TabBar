@@ -2,9 +2,9 @@
 
 把 iPhone 上符合条件的 UIKit `UITabBar` 换成 [Theseus 官方动图](https://github.com/valzevul/Theseus/blob/master/assets/tabBar.gif) 对应的底栏：Metal 玻璃底面、独立选中透镜、按压抬起、拖动拉伸和松手回弹。
 
-- 玻璃底板作为原生 `UITabBar` 内部的最底层子视图；原 `UITabBarButton` 不复制、不重新挂到玻璃里，图标、文字、角标和辅助功能均由原控件显示。普通点击沿用真实系统触摸；水平拖动松手才转发系统选择入口，由 App 决定是否切页。
-- 每轮布局采用“有条件还原上轮按钮坐标 → UIKit 原布局 → 重新记录并重排按钮”，只隐藏原 `_UIBarBackground`；无整栏透明遮罩、无 hitTest 截断、无定时轮询切页。不修改原栏 frame、导航控制器或 safe area。
-- 参考 `com.banshengnianhua.theseustabbar` 的原生栏内挂载、条件几何恢复和事件合并方法，独立源码实现；未复制其动态库或材质。玻璃及透镜继续使用锁定的原版 Theseus Metal。
+- 恢复我们自己的完整 Theseus 底栏：复制原生标签的图标、文字、角标和启用状态，视觉和触摸统一交给 Theseus；原 `UITabBar` 只保留内部选择与 App 回调逻辑，整栏视觉持续由插件遮罩隐藏。
+- 0.1.4 仅修复“切页时露回原生样式”和“选中胶囊过小”：转场、原按钮临时重建、GPU 首帧等待均保留现有替换；首次 GPU 帧前由原库自带的 UIKit 材质承接。胶囊按标签槽位宽度自适配，材质、底栏位置、图标和角标仍沿用自有方案。
+- 不再采用 0.1.3 的原按钮保留重排方案。不改导航控制器、safe area 或系统原栏 frame。
 - 首版目标 iOS 16+。只接管 iPhone 标准贴底横向 `UITabBar`（2–5 个匹配的原生按钮）；iPad 顶栏、微信、桌面 Dock、自绘底栏、识别不出的样式保持原状。VoiceOver 开启时恢复原生栏。
 - 背景取同一窗口的 UIKit 图层，在内存中渲染，不写屏幕截图、不联网。不保证 WebKit/视频/其他跨进程合成内容能出现在折射里。没有完成真机覆盖测试。
 - 上游 Swift/Metal 及许可原样保存于 `Vendor/Theseus`，锁定 `71ca1c127a4e7fe3387361f160c4890dbd427f66`。构建时以 `tools/stage.py` 生成适配副本；shader 不改。

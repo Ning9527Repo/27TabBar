@@ -2,7 +2,9 @@ import UIKit
 import QuartzCore
 
 extension Bundle {
-    static let module: Bundle = resourceBundle ?? .main
+    static let module: Bundle = {
+        resourceBundle ?? .main
+    }()
     static let resourceBundle: Bundle? = {
         guard let path = NGTabResourceBundlePath() else { return nil }
         return Bundle(path: path)
@@ -10,326 +12,302 @@ extension Bundle {
     static let hasTabMetalResources = resourceBundle?.url(forResource: "default", withExtension: "metallib") != nil
 }
 
-@MainActor private final class NativeButtonGeometry {
-    weak var button: UIControl?
-    let nativeFrame: CGRect
-    var appliedFrame: CGRect
-    init(_ button: UIControl) {
-        self.button = button
-        nativeFrame = button.frame
-        appliedFrame = button.frame
+private struct TabData: Equatable {
+    let identity: ObjectIdentifier
+    let title: String?
+    let icon: UIImage?
+    let selectedIcon: UIImage?
+    let accessibility: String?
+    let badge: String?
+    let badgeColor: UIColor?
+    let enabled: Bool
+
+    @MainActor init(_ item: UITabBarItem, _ control: UIControl) {
+        identity = ObjectIdentifier(item)
+        title = item.title
+        icon = item.image
+        selectedIcon = item.selectedImage
+        accessibility = item.accessibilityLabel
+        badge = item.badgeValue
+        badgeColor = item.badgeColor
+        enabled = item.isEnabled && control.isEnabled
     }
-    func restore() {
-        guard let button, NGSystemTabFrameMatches(button.frame, appliedFrame) else { return }
-        button.frame = nativeFrame
+
+    func makeItem() -> TheseusTabBarItem {
+        var item = TheseusTabBarItem(icon: icon, selectedIcon: selectedIcon, title: title)
+        item.ngLabel = accessibility
+        item.ngBadge = badge
+        item.ngBadgeColor = badgeColor
+        item.ngEnabled = enabled
+        return item
     }
 }
 
-@MainActor private final class NativeTabsState: NSObject, UIGestureRecognizerDelegate {
+@MainActor private final class SystemTabsState {
     weak var native: UITabBar?
     let glass = TheseusTabBar(frame: .zero)
-    var busy = false
-    var queued = false
-    var stopRequested = false
-    var failed = false
-    private(set) var ready = false
-    private(set) var active = false
-    private var geometry: [NativeButtonGeometry] = []
-    private let backgrounds = NSMapTable<UIView, NSNumber>.weakToStrongObjects()
-    private var savedColor: UIColor?
-    private var colorCaptured = false
-    private var itemIDs: [ObjectIdentifier] = []
-    private var itemEnabled: [Bool] = []
-    private var refreshTimer: Timer?
-    private var pan: UIPanGestureRecognizer?
-    private var press: UILongPressGestureRecognizer?
-    private var didPan = false
+    let nativeMask = CALayer()
+    var data: [TabData] = []
+    var timer: Timer?
+    var scrollSample: [ObjectIdentifier: CGPoint] = [:]
+    var activationPending = false
+    var refreshTick = 0
+    private(set) var isPresented = false
+    private var metalPresented = false
     private var generation: UInt64 = 0
 
     init(_ bar: UITabBar) {
         native = bar
-        super.init()
-        glass.ngUseHostPosition = true
-        glass.ngExcludedBar = bar
+        nativeMask.backgroundColor = UIColor.clear.cgColor
+        glass.autoresizingMask = []
         glass.barHeight = 63
-        glass.preferredItemWidth = 66
-        glass.isUserInteractionEnabled = false
-        glass.accessibilityElementsHidden = true
-        glass.onItemSelected = { [weak self] index in self?.commitDrag(index) }
+        glass.ngUseHostPosition = true
+        glass.onItemSelected = { [weak self] index in self?.activate(index) }
     }
 
-    deinit { refreshTimer?.invalidate() }
+    deinit { timer?.invalidate() }
 
-    func restoreGeometry() {
-        UIView.performWithoutAnimation {
-            for record in geometry { record.restore() }
-            geometry.removeAll()
-        }
-    }
-
-    private func hideNativeBackgrounds(_ bar: UITabBar, _ views: [UIView]) {
-        for view in views {
-            if backgrounds.object(forKey: view) == nil || view.layer.opacity != 0 {
-                backgrounds.setObject(NSNumber(value: view.layer.opacity), forKey: view)
-            }
-            view.layer.opacity = 0
-        }
-        if !colorCaptured || bar.backgroundColor != .clear {
-            savedColor = bar.backgroundColor
-            colorCaptured = true
-        }
-        bar.backgroundColor = .clear
-    }
-
-    func apply(to bar: UITabBar, buttons: [UIControl], capsule: CGRect) {
-        let isNew = glass.superview !== bar
-        if isNew {
-            generation &+= 1
-            let mount = generation
-            glass.alpha = 0.02
-            glass.ngGlassDidPresent = { [weak self] in
-                guard let self, self.generation == mount, !self.ready,
-                      let bar = self.native, self.glass.superview === bar else { return }
-                self.ready = true
-                self.glass.ngGlassDidPresent = nil
-                NGSystemTabNote("native-metal-first-frame", bar)
-                bar.setNeedsLayout()
-            }
-            bar.insertSubview(glass, at: 0)
-            installGestures(on: bar)
-            refreshTimer = Timer(timeInterval: 1.0 / 15, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, self.active, let bar = self.native, bar.window != nil,
-                          !bar.isHidden, bar.alpha > 0.01,
-                          UIApplication.shared.applicationState == .active else { return }
-                    // This timer refreshes only the backdrop; it never changes selection,
-                    // destroys the mount, or evaluates transition opacity.
-                    self.glass.invalidateBackground()
-                }
-            }
-            if let refreshTimer { RunLoop.main.add(refreshTimer, forMode: .common) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                guard let self, self.generation == mount, !self.ready else { return }
-                self.failed = true
-                self.stop()
-                NGSystemTabNote("native-metal-timeout", self.native)
-            }
-        }
-        if !NGSystemTabFrameMatches(glass.ngHostFrame, capsule) { glass.ngApplyHostFrame(capsule) }
-        let systemBackgrounds = NGSystemTabBackgrounds(bar)
-        glass.ngBindNativeViews(buttons, backgrounds: systemBackgrounds)
-        glass.overrideUserInterfaceStyle = bar.traitCollection.userInterfaceStyle
-        glass.semanticContentAttribute = bar.effectiveUserInterfaceLayoutDirection == .rightToLeft ? .forceRightToLeft : .forceLeftToRight
-        let items = bar.items ?? []
-        let ids = items.map { ObjectIdentifier($0) }
-        let enabled = items.map { $0.isEnabled }
-        if ids != itemIDs || enabled != itemEnabled {
-            itemIDs = ids
-            itemEnabled = enabled
-            // These hidden items supply only slot geometry. Actual icons, labels,
-            // badges, accessibility and tap handling stay on the original controls.
-            glass.items = items.map {
-                var item = TheseusTabBarItem(icon: nil, title: nil)
-                item.ngEnabled = $0.isEnabled
-                return item
-            }
-        }
-        glass.layoutIfNeeded()
-        bar.sendSubviewToBack(glass)
-        if ready {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            hideNativeBackgrounds(bar, systemBackgrounds)
-            for (index, button) in buttons.enumerated() {
-                let visual = bar.effectiveUserInterfaceLayoutDirection == .rightToLeft ? buttons.count - index - 1 : index
-                let record = NativeButtonGeometry(button)
-                button.frame = NGSystemTabSlot(capsule, buttons.count, visual)
-                record.appliedFrame = button.frame
-                geometry.append(record)
-            }
-            glass.alpha = 1
-            CATransaction.commit()
-            if !active { NGSystemTabNote("native-mount-active", bar) }
-            active = true
-        }
-        syncSelection()
-    }
-
-    func syncSelection() {
-        guard let bar = native, let items = bar.items, let selected = bar.selectedItem,
-              let index = items.firstIndex(where: { $0 === selected }),
-              !glass.ngHostIsInteracting else { return }
-        if glass.selectedIndex != index { glass.selectedIndex = index }
-    }
-
-    private func installGestures(on bar: UITabBar) {
-        let drag = UIPanGestureRecognizer(target: self, action: #selector(dragged(_:)))
-        drag.delegate = self
-        drag.cancelsTouchesInView = true
-        drag.maximumNumberOfTouches = 1
-        bar.addGestureRecognizer(drag)
-        pan = drag
-        let touch = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
-        touch.minimumPressDuration = 0
-        touch.allowableMovement = .greatestFiniteMagnitude
-        touch.cancelsTouchesInView = false
-        touch.delaysTouchesBegan = false
-        touch.delaysTouchesEnded = false
-        touch.delegate = self
-        bar.addGestureRecognizer(touch)
-        press = touch
-    }
-
-    func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
-        guard active, let bar = native, !bar.isHidden, bar.alpha > 0.01,
-              glass.bounds.contains(gesture.location(in: glass)) else { return false }
-        if let drag = gesture as? UIPanGestureRecognizer {
-            let velocity = drag.velocity(in: bar)
-            return abs(velocity.x) > abs(velocity.y)
-        }
-        return true
-    }
-
-    func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        if (gesture === pan && other === press) || (gesture === press && other === pan) { return true }
-        // The passive press observer must not prevent UIKit's own button gestures.
-        if gesture === press, let bar = native, let view = other.view { return view === bar || view.isDescendant(of: bar) }
-        return false
-    }
-
-    @objc private func pressed(_ recognizer: UILongPressGestureRecognizer) {
-        guard active else { return }
-        switch recognizer.state {
-        case .began:
-            didPan = false
-            glass.scriptedTouchBegan(at: recognizer.location(in: glass))
-        case .ended:
-            if !didPan {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, !self.didPan, let bar = self.native,
-                          let selected = bar.selectedItem, let items = bar.items,
-                          let index = items.firstIndex(where: { $0 === selected }) else { return }
-                    self.glass.ngFinishNativePress(index)
-                    self.syncSelection()
-                }
-            }
-        case .cancelled, .failed:
-            if !didPan { glass.ngCancelNativeInteraction(); syncSelection() }
-        default: break
-        }
-    }
-
-    @objc private func dragged(_ recognizer: UIPanGestureRecognizer) {
-        guard active else { return }
-        let location = recognizer.location(in: glass)
-        switch recognizer.state {
-        case .began:
-            didPan = true
-            if !glass.ngHostIsInteracting { glass.scriptedTouchBegan(at: location) }
-            glass.scriptedTouchMoved(to: location, velocity: recognizer.velocity(in: glass))
-        case .changed:
-            glass.scriptedTouchMoved(to: location, velocity: recognizer.velocity(in: glass))
-        case .ended:
-            glass.scriptedTouchEnded(at: location)
-            syncSelection()
-        case .cancelled, .failed:
-            glass.ngCancelNativeInteraction()
-            syncSelection()
-        default: break
-        }
-    }
-
-    private func commitDrag(_ index: Int) {
-        guard active, let bar = native, let items = bar.items, items.indices.contains(index),
-              items[index].isEnabled, let buttons = NGSystemTabControls(bar, items.count) else { return }
-        // Only a completed horizontal drag reaches this path. Simple taps never do.
-        if !NGActivateSystemTabControl(bar, buttons[index]) { NGSystemTabNote("native-drag-rejected", bar) }
-        DispatchQueue.main.async { [weak self] in self?.syncSelection() }
-    }
-
-    func stop() {
+    func attach(to bar: UITabBar, in parent: UIView, at frame: CGRect) {
         generation &+= 1
-        restoreGeometry()
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-        if let bar = native {
-            if let pan { bar.removeGestureRecognizer(pan) }
-            if let press { bar.removeGestureRecognizer(press) }
+        let mount = generation
+        glass.ngExcludedBar = bar
+        glass.ngApplyHostFrame(frame)
+        glass.ngPrepareReplacement()
+        glass.ngGlassDidPresent = { [weak self] in
+            guard let self, self.generation == mount else { return }
+            self.metalPresented = true
+            self.glass.ngGlassDidPresent = nil
+            NGSystemTabNote("replacement-metal-ready", self.native)
+        }
+        UIView.performWithoutAnimation {
+            parent.insertSubview(glass, aboveSubview: bar)
+            reveal(in: bar)
+        }
+        timer = Timer(timeInterval: 1.0 / 12, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let bar = self.native else { return }
+                SystemTabsBridge.update(bar)
+            }
+        }
+        if let timer {
+            timer.tolerance = 0.02
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, self.generation == mount, !self.metalPresented else { return }
+            NGSystemTabNote("replacement-using-own-material", self.native)
+            // Keep our own bar and its library fallback. A slow GPU frame must
+            // never remove the replacement and reveal the system bar.
+        }
+    }
+
+    func reveal(in bar: UITabBar) {
+        guard !isPresented else { return }
+        isPresented = true
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        nativeMask.frame = bar.bounds
+        bar.layer.mask = nativeMask
+        glass.alpha = 1
+        CATransaction.commit()
+        glass.isUserInteractionEnabled = true
+        glass.accessibilityElementsHidden = false
+    }
+
+    func preserveReplacement(_ bar: UITabBar) {
+        guard isPresented, glass.superview != nil else { return }
+        if let parent = bar.superview, glass.superview === parent,
+           let originalIndex = parent.subviews.firstIndex(where: { $0 === bar }),
+           let replacementIndex = parent.subviews.firstIndex(where: { $0 === glass }),
+           replacementIndex <= originalIndex {
+            parent.insertSubview(glass, aboveSubview: bar)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        nativeMask.frame = bar.bounds
+        if bar.layer.mask !== nativeMask { bar.layer.mask = nativeMask }
+        glass.isHidden = bar.isHidden || bar.isCustomizing
+        glass.alpha = bar.alpha
+        CATransaction.commit()
+        glass.isUserInteractionEnabled = !glass.isHidden && bar.isUserInteractionEnabled
+    }
+
+    func suspend() {
+        glass.isHidden = true
+        glass.isUserInteractionEnabled = false
+    }
+
+    func detach() {
+        generation &+= 1
+        timer?.invalidate()
+        timer = nil
+        glass.ngGlassDidPresent = nil
+        if let bar = native, bar.layer.mask === nativeMask {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            for view in backgrounds.keyEnumerator().allObjects.compactMap({ $0 as? UIView }) {
-                if view.layer.opacity == 0, let value = backgrounds.object(forKey: view) { view.layer.opacity = value.floatValue }
-            }
-            if colorCaptured, bar.backgroundColor == .clear { bar.backgroundColor = savedColor }
+            bar.layer.mask = nil
             CATransaction.commit()
         }
-        backgrounds.removeAllObjects()
-        savedColor = nil
-        colorCaptured = false
-        pan = nil
-        press = nil
-        active = false
-        ready = false
-        glass.ngGlassDidPresent = nil
-        glass.ngCancelNativeInteraction()
         glass.removeFromSuperview()
+    }
+
+    func apply(_ tabs: [TabData], index: Int, bar: UITabBar, frame: CGRect) {
+        // Do not write geometry during Theseus's press / stretch transform.
+        if glass.ngHostFrame != frame { glass.ngApplyHostFrame(frame) }
+        if nativeMask.frame != bar.bounds {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            nativeMask.frame = bar.bounds
+            CATransaction.commit()
+        }
+        if glass.effectiveUserInterfaceLayoutDirection != bar.effectiveUserInterfaceLayoutDirection {
+            glass.semanticContentAttribute = bar.effectiveUserInterfaceLayoutDirection == .rightToLeft ? .forceRightToLeft : .forceLeftToRight
+        }
+        if glass.overrideUserInterfaceStyle != bar.traitCollection.userInterfaceStyle {
+            glass.overrideUserInterfaceStyle = bar.traitCollection.userInterfaceStyle
+        }
+        if glass.selectedTintColor != bar.tintColor { glass.selectedTintColor = bar.tintColor }
+        let unselected = bar.unselectedItemTintColor ?? TheseusTabBar.nativeUnselectedTint
+        if glass.unselectedTintColor != unselected { glass.unselectedTintColor = unselected }
+        if tabs != data {
+            data = tabs
+            glass.items = tabs.map { $0.makeItem() }
+        }
+        if !activationPending, glass.selectedIndex != index { glass.selectedIndex = index }
+        // Sample while a scroll view behind the bar is moving. Update stable
+        // content at a slower cadence (e.g. badges, asynchronously loaded cells).
+        refreshTick = (refreshTick + 1) % 8
+        let scroll = sampleScroll(in: bar)
+        if scroll != scrollSample || refreshTick == 0 {
+            scrollSample = scroll
+            glass.invalidateBackground()
+        }
+    }
+
+    private func sampleScroll(in bar: UITabBar) -> [ObjectIdentifier: CGPoint] {
+        guard let win = bar.window, let root = win.rootViewController?.viewIfLoaded else { return [:] }
+        let box = glass.convert(glass.bounds, to: win).insetBy(dx: -20, dy: -60)
+        var queue: [UIView] = [root]
+        var visited = 0
+        var result: [ObjectIdentifier: CGPoint] = [:]
+        while let view = queue.popLast(), visited < 128 {
+            visited += 1
+            guard view !== bar, view !== glass, !view.isHidden, view.alpha > 0.02,
+                  view.convert(view.bounds, to: win).intersects(box) else { continue }
+            if let scroll = view as? UIScrollView { result[ObjectIdentifier(scroll)] = scroll.contentOffset }
+            queue.append(contentsOf: view.subviews.prefix(32))
+        }
+        return result
+    }
+
+    private func activate(_ index: Int) {
+        guard let bar = native, !activationPending, let items = bar.items, items.indices.contains(index),
+              data.indices.contains(index), ObjectIdentifier(items[index]) == data[index].identity,
+              let buttons = NGSystemTabControls(bar, items.count) else { return }
+        activationPending = true
+        defer {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let bar = self.native else { return }
+                self.activationPending = false
+                SystemTabsBridge.update(bar)
+            }
+        }
+        guard items[index].isEnabled else { return }
+        if !NGActivateSystemTabControl(bar, buttons[index]) {
+            NGSystemTabNote("native-action-rejected", bar)
+        }
     }
 }
 
 @MainActor @objc(NGSystemTabsBridge) final class SystemTabsBridge: NSObject {
-    private static let states = NSMapTable<UITabBar, NativeTabsState>.weakToStrongObjects()
-
-    @objc(beginLayout:) static func beginLayout(_ bar: UITabBar) -> Bool {
-        guard !NGSystemTabIsCapturing() else { return false }
-        let state: NativeTabsState
-        if let previous = states.object(forKey: bar) { state = previous }
-        else { state = NativeTabsState(bar); states.setObject(state, forKey: bar) }
-        guard !state.busy else { return false }
-        state.busy = true
-        state.restoreGeometry()
-        return true
+    private static let states = NSMapTable<UITabBar, SystemTabsState>.weakToStrongObjects()
+    private static let observed = NSHashTable<UITabBar>.weakObjects()
+    private static let lifecycle: [NSObjectProtocol] = [UIApplication.didBecomeActiveNotification,
+        UIApplication.didEnterBackgroundNotification, UIApplication.protectedDataDidBecomeAvailableNotification,
+        UIAccessibility.voiceOverStatusDidChangeNotification,
+        UIAccessibility.reduceTransparencyStatusDidChangeNotification].map { name in
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+            DispatchQueue.main.async {
+                for bar in observed.allObjects { update(bar) }
+            }
+        }
     }
 
-    @objc(endLayout:) static func endLayout(_ bar: UITabBar) {
-        guard let state = states.object(forKey: bar), state.busy else { return }
-        defer { state.busy = false }
-        guard !state.stopRequested else { state.stopRequested = false; state.stop(); return }
-        guard !state.failed, let win = bar.window, !bar.isCustomizing,
-              win.traitCollection.userInterfaceIdiom == .phone,
-              !UIAccessibility.isVoiceOverRunning, !UIAccessibility.isReduceTransparencyEnabled,
-              bar.transform.isIdentity, bar.layer.mask == nil,
-              let items = bar.items, (2...5).contains(items.count),
-              let buttons = NGSystemTabControls(bar, items.count),
-              !NGSystemTabBackgrounds(bar).isEmpty else {
-            state.stop(); NGSystemTabNote("native-layout-gate", bar); return
-        }
-        let box = bar.convert(bar.bounds, to: win)
-        let capsule = NGSystemTabCapsule(bar, items.count)
-        guard !capsule.isEmpty, box.intersects(win.bounds), abs(box.maxY-win.bounds.maxY) <= 12,
-              buttons.allSatisfy({ $0.transform.isIdentity && $0.frame.width >= 30 && $0.frame.height >= 32 }),
-              Bundle.hasTabMetalResources, !TheseusSettings.shared.shouldUseFallback,
-              UIApplication.shared.isProtectedDataAvailable, MetalContext.shared != nil else {
-            state.stop(); NGSystemTabNote("native-geometry-metal-gate", bar); return
-        }
-        state.apply(to: bar, buttons: buttons, capsule: capsule)
+    @objc(suspend:) static func suspend(_ bar: UITabBar) {
+        states.object(forKey: bar)?.suspend()
     }
 
     @objc(detach:) static func detach(_ bar: UITabBar) {
-        guard let state = states.object(forKey: bar) else { return }
-        if state.busy { state.stopRequested = true; return }
-        state.stop()
+        states.object(forKey: bar)?.detach()
         states.removeObject(forKey: bar)
     }
 
-    @objc(queueSelection:) static func queueSelection(_ bar: UITabBar) {
-        guard let state = states.object(forKey: bar), !state.queued, !NGSystemTabIsCapturing() else { return }
-        state.queued = true
-        DispatchQueue.main.async { [weak bar, weak state] in
-            guard let state else { return }
-            state.queued = false
-            guard let bar, states.object(forKey: bar) === state, bar.window != nil else { return }
-            if state.busy { bar.setNeedsLayout(); return }
-            state.syncSelection()
+    private static func layoutFrame(for bar: UITabBar, in win: UIWindow, parent: UIView) -> CGRect? {
+        let box = bar.convert(bar.bounds, to: win)
+        let visibleBottom = win.bounds.maxY
+        guard win.traitCollection.userInterfaceIdiom == .phone,
+              box.width.isFinite, box.height.isFinite, box.minX.isFinite, box.minY.isFinite,
+              box.width >= 260, box.width >= win.bounds.width * 0.90,
+              box.height >= 40, box.height <= 112,
+              box.intersects(win.bounds), abs(box.maxY - visibleBottom) <= 12 else { return nil }
+        let y = min(box.maxY, visibleBottom) - win.safeAreaInsets.bottom - 5 - 63
+        let rect = CGRect(x: box.minX + 14, y: y, width: box.width - 28, height: 63)
+        let result = parent.convert(rect, from: win)
+        return result.width > 0 && result.height > 0 ? result : nil
+    }
+
+    @objc(update:) static func update(_ bar: UITabBar) {
+        guard Thread.isMainThread, !NGSystemTabIsCapturing() else { return }
+        observed.add(bar)
+        _ = lifecycle
+        let previous = states.object(forKey: bar)
+        guard let win = bar.window, let parent = bar.superview else {
+            previous?.suspend(); return
         }
+        if let previous, previous.glass.superview !== parent {
+            previous.glass.removeFromSuperview()
+            parent.insertSubview(previous.glass, aboveSubview: bar)
+        }
+        previous?.preserveReplacement(bar)
+        // These conditions suppress updates, not the claimed replacement. Model
+        // or presentation alpha during a tab transition never restores native UI.
+        guard UIApplication.shared.applicationState != .background,
+              !bar.isHidden, !bar.isCustomizing,
+              bar.isUserInteractionEnabled else { return }
+        guard previous != nil || (!UIAccessibility.isVoiceOverRunning && !UIAccessibility.isReduceTransparencyEnabled) else { return }
+        guard let frame = layoutFrame(for: bar, in: win, parent: parent) else {
+            NGSystemTabNote("geometry-update-deferred", bar); return
+        }
+        guard let items = bar.items, let selected = bar.selectedItem,
+              let index = items.firstIndex(where: { $0 === selected }) else {
+            NGSystemTabNote("selected-item-update-deferred", bar); return
+        }
+        guard let buttons = NGSystemTabControls(bar, items.count) else {
+            NGSystemTabNote("native-buttons-update-deferred", bar); return
+        }
+        if !buttons[index].isSelected { NGSystemTabNote("native-selected-mismatch", bar) }
+        guard previous != nil || Bundle.hasTabMetalResources else {
+            NGSystemTabNote("resources-unavailable", bar); return
+        }
+        let tabs = zip(items, buttons).map { TabData($0.0, $0.1) }
+        let state: SystemTabsState
+        if let previous, previous.glass.superview === parent {
+            state = previous
+        } else {
+            detach(bar)
+            state = SystemTabsState(bar)
+            states.setObject(state, forKey: bar)
+            state.glass.selectedIndex = index
+            state.glass.preferredItemWidth = 66
+            state.glass.ngHostFrame = frame
+            state.apply(tabs, index: index, bar: bar, frame: frame)
+            state.attach(to: bar, in: parent, at: frame)
+        }
+        state.apply(tabs, index: index, bar: bar, frame: frame)
+    }
+
+    @objc(usesOverlay:) static func usesOverlay(_ bar: UITabBar) -> Bool {
+        guard let state = states.object(forKey: bar) else { return false }
+        return state.glass.superview != nil && bar.layer.mask === state.nativeMask
     }
 }

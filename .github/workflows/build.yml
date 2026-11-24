@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check pinned sources and adapter
         run: python3 tests/check_source.py
+      - name: Check replacement state and capsule geometry
+        run: python3 tests/test_replacement.py
       - name: Check Xcode Metal toolchain
         run: |
           xcodebuild -version
