@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct AutoMask: OptionSet { let rawValue: Int }
 class UIColor: NSObject { static let clear = UIColor(); static let blue = UIColor() }
