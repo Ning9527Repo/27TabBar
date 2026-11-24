@@ -15,7 +15,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'tools'))
 from stage import stage, verify_vendor
-from build import make_deb, PKG, VERSION
+from build import make_deb, PKG, VERSION, verify_tar_layout
 
 
 def check():
@@ -64,7 +64,8 @@ def check():
                 assert f'Architecture: iphoneos-{arch}\n' in control
                 assert 'Author: Ning&valzevul\n' in control
             with tarfile.open(fileobj=io.BytesIO(members['data.tar.gz']), mode='r:gz') as tar:
-                files = {x.name[2:]:tar.extractfile(x).read() for x in tar}
+                verify_tar_layout(tar.getmembers(), expected)
+                files = {x.name[2:]:tar.extractfile(x).read() for x in tar if x.isfile()}
                 assert files == {name:data for name,(data,mode) in expected.items()}
                 assert all(name.startswith('var/jb/') == (arch == 'arm64') for name in files)
                 pl = next(data for name,data in files.items() if name.endswith('SystemTabs.plist'))
@@ -74,6 +75,17 @@ def check():
             if sys.platform == 'linux':
                 subprocess.run(['dpkg-deb','--info',str(path)],check=True,stdout=subprocess.DEVNULL)
                 subprocess.run(['dpkg-deb','--extract',str(path),str(temp/arch)],check=True,stdout=subprocess.DEVNULL)
+                install = temp/(arch+'-install')
+                admin = temp/(arch+'-db')
+                install.mkdir()
+                admin.mkdir()
+                (admin/'status').write_text('')
+                result = subprocess.run(['dpkg','--root='+str(install),'--admindir='+str(admin),
+                    '--force-architecture','--no-triggers','--unpack',str(path)],
+                    text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+                assert result.returncode == 0, result.stdout
+                for name, data in files.items():
+                    assert (install/name).read_bytes() == data
     workflow = (ROOT/'.github/workflows/build.yml').read_text()
     assert 'workflow_dispatch:' in workflow and '  push:' not in workflow and '  pull_request:' not in workflow
     print(json.dumps({'vendor_files':37,'staged_swift':33,'shader_sha256':hashlib.sha256(original).hexdigest(),

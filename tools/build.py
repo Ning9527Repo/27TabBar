@@ -15,7 +15,7 @@ import tarfile
 from stage import ROOT, VENDOR, stage
 
 PKG = 'com.ning.theseussystemtabs'
-VERSION = '0.1.0'
+VERSION = '0.1.1'
 MIN_IOS = '16.0'
 NAME = 'TheseusSystemTabs'
 BUNDLE = NAME + 'Resources.bundle'
@@ -30,9 +30,47 @@ def run(*args, capture=False):
     return result.stdout.strip() if capture else None
 
 
+def parent_directories(entries):
+    directories = {''}
+    for name in entries:
+        parts = name.split('/')
+        if any(part in ('', '.', '..') for part in parts):
+            raise ValueError('Invalid archive path: ' + name)
+        directories.update('/'.join(parts[:index]) for index in range(1, len(parts)))
+    if directories.intersection(entries):
+        raise ValueError('Archive file used as a parent directory')
+    return sorted(directories, key=lambda name: (name.count('/') + bool(name), name))
+
+
+def verify_tar_layout(members, expected):
+    seen, files = set(), set()
+    for entry in members:
+        assert entry.name == '.' or entry.name.startswith('./')
+        name = '' if entry.name == '.' else entry.name[2:].rstrip('/')
+        assert (entry.uid, entry.gid) == (0, 0)
+        if entry.isdir():
+            assert name not in seen and entry.mode == 0o755
+            if name:
+                assert name.rpartition('/')[0] in seen, name
+            seen.add(name)
+        else:
+            assert entry.isfile() and name in expected and name not in files
+            assert name.rpartition('/')[0] in seen, name
+            files.add(name)
+    assert seen == set(parent_directories(expected))
+    assert files == set(expected)
+
+
 def tar_gz(entries):
     output = io.BytesIO()
     with tarfile.open(fileobj=output, mode='w', format=tarfile.USTAR_FORMAT) as tar:
+        for directory in parent_directories(entries):
+            info = tarfile.TarInfo('./' + directory if directory else '.')
+            info.type = tarfile.DIRTYPE
+            info.mode = 0o755
+            info.mtime = 0
+            info.uname = info.gname = 'root'
+            tar.addfile(info)
         for name, (data, mode) in sorted(entries.items()):
             info = tarfile.TarInfo('./' + name)
             info.size = len(data)
@@ -116,11 +154,13 @@ def verify_deb(path, expected, arch, install_name, directory):
     assert pos == len(b) and list(members) == ['debian-binary','control.tar.gz','data.tar.gz']
     assert members['debian-binary'] == b'2.0\n'
     with tarfile.open(fileobj=io.BytesIO(members['control.tar.gz']), mode='r:gz') as tar:
+        verify_tar_layout(tar.getmembers(), {'control'})
         assert f'Architecture: iphoneos-{arch}\n'.encode() in tar.extractfile('./control').read()
     with tarfile.open(fileobj=io.BytesIO(members['data.tar.gz']), mode='r:gz') as tar:
-        assert len(tar.getmembers()) == len(expected)
+        verify_tar_layout(tar.getmembers(), expected)
         for entry in tar:
-            assert entry.isfile() and entry.name.startswith('./') and (entry.uid,entry.gid) == (0,0)
+            if entry.isdir():
+                continue
             content, mode = expected[entry.name[2:]]
             assert tar.extractfile(entry).read() == content and entry.mode == mode
             if entry.name.endswith('.dylib'):
