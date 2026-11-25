@@ -86,7 +86,24 @@ def check():
         assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
         assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
         assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
-        assert 'self.selectionView.alpha = share' in shrink and 'glassView.alpha = 1 - share' in shrink
+        assert 'self.selectionView.alpha = share' not in shrink
+        assert 'selectionView.alpha = 1' in shrink and 'self.ngSyncDragPill(glassView)' in shrink
+        assert 'glassView.alpha = 1 - share' in shrink
+        setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
+        assert 'let sourceView = ngUseHostPosition ? self : theseusSourceView' in setup
+        assert 'glassView.ngHostedDragLens = ngUseHostPosition' in setup
+        assert 'if !ngUseHostPosition, let sourceView = theseusSourceView' in tab
+        assert 'guard sourceView === self, let row = itemsContainerView else { return }' in tab
+        assert 'backgroundGlassView.ngHoldBackdrop(ngHostIsInteracting)' in tab
+        assert '!isShuttingDown, !ngBackdropHeld' in renderer
+        fast = section(renderer, '    private func ngRenderHostedLens(', '    // CAMetalLayer acquisition')
+        assert 'originalSourceTexture: plate' in fast and 'itemTexture: items' in fast
+        assert 'encodeBlurPass(' not in fast and 'captureTexture(' not in fast
+        assert 'fixedSize: size' in fast and 'guard encodeRefractionCompositePass' in fast
+        assert 'func ngTrackedLensFrame' in tab and 'frame.midX - converted.midX' in tab
+        render = section(renderer, '    private func performRender(', '    /// A glass with a lens chain')
+        assert render.index('if ngHostedDragLens {') < render.index('NGSystemTabCaptureBegin()')
+        assert '0xff000000' in renderer and 'if ngHostedDragLens && shouldUseFallback' in surface
         assert 'direct: ngUseHostPosition' in tab
         assert 'if direct, ngDragCenter.update(x)' in tab and 'centerX = frame.midX' in tab
         assert 'transform.m41 += containerFrame.midX - current.midX' in tab
@@ -105,11 +122,21 @@ def check():
         refresh = section(surface, '    func ngRefreshPlatter(', '    func ngPrepareReplacement()')
         assert 'ngSwitchCover' not in surface and 'metal.alpha' not in refresh
         assert 'if crossfade, ngPresented, !isUsingFallback' in refresh
-        assert 'ngAppearanceEpoch == epoch' in refresh and '0.35' in refresh
+        assert 'ngAppearanceGate.accept(ticket)' in refresh
+        assert 'ngAppearanceGate.prepare(dark: dark)' in refresh
+        assert 'fade.fromValue = visibleOpacity' in refresh and 'ngAppearanceImage.opacity = shownOpacity' in refresh
+        timeout = section(surface, '    private func ngCheckPlatterAppearance(', '    private func ngFinishPlatterAppearance(')
+        assert 'self.ngPrepareReplacement()' in timeout and 'self.ngClearPlatterAppearance()' in timeout
+        assert 'ngFinishPlatterAppearance(' not in timeout and 'reveal?(true)' not in timeout
+        assert 'ngPlatterBecameActive' in surface and '!self.ngBackdropHeld' in timeout
+        assert 'visiblePresent(ticket)' in renderer and 'ticket.dark == (hostView.traitCollection.userInterfaceStyle == .dark)' in renderer
+        assert 'adaptDarkWeight = target' in tab and 'adaptDarkTarget = target' in tab
         assert 'reveal?(true)' in refresh and 'if notify { reveal?(false) }' in refresh
         assert 'self?.ngFinishHostedPalette(animated: animated)' in tab
         assert 'drawable.addPresentedHandler' in renderer and 'shown.presentedTime > 0' in renderer
-        assert 'bar.superview?.traitCollection.userInterfaceStyle == nativeStyle' in (ROOT/'Sources/Bridge.swift').read_text()
+        bridge = (ROOT/'Sources/Bridge.swift').read_text()
+        style = section(bridge, '    private func syncAppearance(', '    func preserveReplacement(')
+        assert 'let style = bar.overrideUserInterfaceStyle' in style and 'traitCollection' not in style
         assert 'fade.fromValue = previous' in solid and 'fade.toValue = fill.cgColor' in solid
         assert 'captureSnapshot = nil\n        captureSnapshotOverride = nil' in surface
         assert 'metalLayerView?.alpha = 0' in surface and 'metalLayerView?.alpha = 1' in surface

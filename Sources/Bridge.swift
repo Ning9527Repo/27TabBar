@@ -119,8 +119,15 @@ private struct TabData: Equatable {
         glass.accessibilityElementsHidden = false
     }
 
+    private func syncAppearance(from bar: UITabBar) {
+        // A transient mismatch of inherited traits is not a native override.
+        let style = bar.overrideUserInterfaceStyle
+        if glass.overrideUserInterfaceStyle != style { glass.overrideUserInterfaceStyle = style }
+    }
+
     func preserveReplacement(_ bar: UITabBar) {
         guard isPresented, glass.superview != nil else { return }
+        syncAppearance(from: bar)
         if let parent = bar.superview, glass.superview === parent,
            let originalIndex = parent.subviews.firstIndex(where: { $0 === bar }),
            let replacementIndex = parent.subviews.firstIndex(where: { $0 === glass }),
@@ -168,12 +175,7 @@ private struct TabData: Equatable {
         if glass.effectiveUserInterfaceLayoutDirection != bar.effectiveUserInterfaceLayoutDirection {
             glass.semanticContentAttribute = bar.effectiveUserInterfaceLayoutDirection == .rightToLeft ? .forceRightToLeft : .forceLeftToRight
         }
-        // Normally both views inherit the same appearance from their parent.
-        // Don't pin the overlay to the last polled style during a system transition.
-        let nativeStyle = bar.traitCollection.userInterfaceStyle
-        let style = bar.overrideUserInterfaceStyle != .unspecified ? bar.overrideUserInterfaceStyle
-            : (bar.superview?.traitCollection.userInterfaceStyle == nativeStyle ? .unspecified : nativeStyle)
-        if glass.overrideUserInterfaceStyle != style { glass.overrideUserInterfaceStyle = style }
+        syncAppearance(from: bar)
         if glass.selectedTintColor != bar.tintColor { glass.selectedTintColor = bar.tintColor }
         let unselected = bar.unselectedItemTintColor ?? TheseusTabBar.nativeUnselectedTint
         if glass.unselectedTintColor != unselected { glass.unselectedTintColor = unselected }

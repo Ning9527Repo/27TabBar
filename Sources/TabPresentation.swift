@@ -44,6 +44,40 @@ struct NGTabDirectFollow {
     }
 }
 
+// A presentation can release the previous palette only after a frame encoded
+// with this exact theme generation and prepared material has reached display.
+struct NGTabAppearanceTicket: Equatable {
+    let generation: UInt64
+    let revision: UInt64
+    let dark: Bool
+}
+
+struct NGTabAppearanceGate {
+    private(set) var generation: UInt64 = 0
+    private var revision: UInt64 = 0
+    private(set) var expected: NGTabAppearanceTicket? = nil
+
+    @discardableResult
+    mutating func begin() -> UInt64 {
+        generation &+= 1
+        expected = nil
+        return generation
+    }
+
+    mutating func prepare(dark: Bool) -> NGTabAppearanceTicket {
+        revision &+= 1
+        let ticket = NGTabAppearanceTicket(generation: generation, revision: revision, dark: dark)
+        expected = ticket
+        return ticket
+    }
+
+    mutating func accept(_ ticket: NGTabAppearanceTicket) -> Bool {
+        guard expected == ticket else { return false }
+        expected = nil
+        return true
+    }
+}
+
 // Equal-width slots share one center for the icon, title and selection.
 // Outer platter geometry stays fixed. Its ends receive the same 4 pt gap
 // as the gap between adjacent capsule positions.

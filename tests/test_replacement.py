@@ -100,7 +100,7 @@ items[0].isEnabled = false
 let beforeDisabled = nativeActivations
 precondition(glass.ngActivateNative?(0) == nil && nativeActivations == beforeDisabled)
 drainMain()
-// A same-parent bar inherits; a distinct or explicit hosting style is retained.
+// Only a genuine override pins the hosted style; uneven trait propagation does not.
 precondition(glass.overrideUserInterfaceStyle == .unspecified)
 parent.traitCollection.userInterfaceStyle = .dark
 bar.traitCollection.userInterfaceStyle = .dark
@@ -108,10 +108,17 @@ SystemTabsBridge.update(bar)
 precondition(glass.overrideUserInterfaceStyle == .unspecified)
 bar.traitCollection.userInterfaceStyle = .light
 SystemTabsBridge.update(bar)
-precondition(glass.overrideUserInterfaceStyle == .light)
+precondition(glass.overrideUserInterfaceStyle == .unspecified)
+// An explicit change is applied even during an unrelated metadata deferral.
+let styleControls = bar.controls
+bar.controls = nil
 bar.overrideUserInterfaceStyle = .dark
 SystemTabsBridge.update(bar)
 precondition(glass.overrideUserInterfaceStyle == .dark)
+bar.overrideUserInterfaceStyle = .unspecified
+SystemTabsBridge.update(bar)
+precondition(glass.overrideUserInterfaceStyle == .unspecified)
+bar.controls = styleControls
 SystemTabsBridge.detach(bar);precondition(bar.layer.mask==nil)
 // Drive the actual gesture gate with overlapping recognizer lifetimes.
 let press = NSObject(), pan = NSObject()
@@ -141,6 +148,24 @@ precondition(direct.update(101) && direct.update(97) && direct.update(97))
 precondition(!direct.update(CGFloat.infinity) && direct.isTracking)
 direct.reset()
 precondition(!direct.isTracking && !direct.update(-100) && direct.update(-101))
+// Real readiness state: out-of-order frames, duplicate callbacks, and rapid reversals.
+var appearance = NGTabAppearanceGate()
+for _ in 0..<100 {
+    let first = appearance.begin()
+    precondition(appearance.expected == nil)
+    let dark = appearance.prepare(dark: true)
+    precondition(dark.generation == first)
+    let revised = appearance.prepare(dark: true)
+    precondition(!appearance.accept(dark))
+    precondition(!appearance.accept(NGTabAppearanceTicket(generation: first, revision: revised.revision, dark: false)))
+    let next = appearance.begin()
+    precondition(next != first && !appearance.accept(revised))
+    let light = appearance.prepare(dark: false)
+    precondition(appearance.accept(light) && !appearance.accept(light))
+    let interrupted = appearance.prepare(dark: true)
+    appearance.begin()
+    precondition(!appearance.accept(interrupted) && appearance.expected == nil)
+}
 var geometry=TestCapsules();var cases=0
 for ios26 in [false,true] {
  geometry.usesIOS26Look = ios26

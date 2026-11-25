@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import sys
 
+import hosted_appearance
+import hosted_motion
 import stability
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -774,15 +776,18 @@ def stage(dst):
     verify_vendor()
     def adapted_tab(s):
         s = opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s))))
-        return stability.appearance_tab(stability.drag_tab(s, replace), replace)
+        s = stability.appearance_tab(stability.drag_tab(s, replace), replace)
+        return hosted_appearance.tab(hosted_motion.tab(s, replace), replace)
 
     def adapted_renderer(s):
         s = nonblocking_lens_renderer(renderer_frame_policy(renderer(s)))
-        return stability.appearance_renderer(stability.drag_renderer(s, replace), replace)
+        s = stability.appearance_renderer(stability.drag_renderer(s, replace), replace)
+        return hosted_appearance.renderer(hosted_motion.renderer(s, replace), replace)
 
     def adapted_surface(s):
         s = opaque_selection_surface(motion_surface(surface_frame_policy(surface(s))))
-        return stability.appearance_surface(s, replace)
+        s = stability.appearance_surface(s, replace)
+        return hosted_appearance.surface(hosted_motion.surface(s, replace), replace)
 
     def adapted_capture(s, rect):
         return stability.bounded_capture(opaque_capture(s, rect), replace)
