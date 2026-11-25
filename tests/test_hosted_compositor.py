@@ -1,172 +1,163 @@
 #!/usr/bin/env python3
-"""Execute extracted production hosted-gesture functions with Foundation stand-ins.
-Not a UIKit or device visual test. The animator exposes intermediate ticks.
-"""
-from pathlib import Path
+"""Run actual generated event methods with Swift stand-ins, not UIKit/Metal."""
+import shutil
 import subprocess
 import sys
 import tempfile
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT/'tools'))
-from stage import stage
-from test_replacement import method
+from pathlib import Path
+from test_replacement import ROOT, method, stage
 
 STANDINS = r'''
 import Foundation
+#if canImport(CoreGraphics)
 import CoreGraphics
-struct TestShape { var cornerRadius: CGFloat = 0 }
-final class TestLayer {
-    var frame = CGRect.zero
-    var cornerRadius: CGFloat = 0
-    func presentation() -> TestLayer? { nil }
-    func removeAnimation(forKey: String) {}
+#endif
+struct Transform: Equatable { var m41: CGFloat = 0; var m42: CGFloat = 0 }
+let CATransform3DIdentity = Transform()
+func CACurrentMediaTime() -> TimeInterval { 100 }
+final class Layer {
+    var frame = CGRect.zero, transform = CATransform3DIdentity
+    func removeAllAnimations() {}
 }
-final class TestView {
-    var bounds = CGRect.zero
-    var center = CGPoint.zero
-    var shape = TestShape()
-    let layer = TestLayer()
-    var frame: CGRect { CGRect(x:center.x-bounds.width/2,y:center.y-bounds.height/2,width:bounds.width,height:bounds.height) }
+final class Glass {
+    let layer = Layer()
+    var isHidden = true, continuousUpdate = false
+    var alpha: CGFloat = 1
+    func pauseRendering() { continuousUpdate = false }
 }
-enum CATransaction {
-    static func begin() {}
-    static func commit() {}
-    static func setDisableActions(_ value: Bool) {}
-}
-enum UIAccessibility { static var isReduceMotionEnabled = false }
+final class Driver { func stop() {} }
 final class LensMorphAnimator {
     var isRunning = false
-    var start = CGRect.zero
-    var target = CGRect.zero
-    var onTick: ((CGRect, CGFloat) -> Void)?
-    var onComplete: (() -> Void)?
-    func morph(from: CGRect, to: CGRect, spring: Int,
-               onTick: @escaping (CGRect, CGFloat) -> Void, onComplete: @escaping () -> Void) {
-        cancel(); start=from; target=to; self.onTick=onTick; self.onComplete=onComplete; isRunning=true
-        tick(0)
-    }
-    func tick(_ t: CGFloat) {
-        guard isRunning else { return }
-        let r=CGRect(x:start.minX+(target.minX-start.minX)*t, y:start.minY+(target.minY-start.minY)*t,
-                     width:start.width+(target.width-start.width)*t, height:start.height+(target.height-start.height)*t)
-        onTick?(r,t)
-        if t >= 1 { let done=onComplete; cancel(); done?() }
-    }
-    func cancel() { isRunning=false; onTick=nil; onComplete=nil }
+    func retarget(to: CGRect) {}
+    func cancel() { isRunning = false }
 }
-struct TestItem { var ngEnabled = true }
-final class TestHosted {
-    let selectionView = TestView()
-    var isDragging=false, isCollapsingLens=false, isCommittingDrag=false, isUserInteractionEnabled=true
-    var selectedIndex=0
-    var items=Array(repeating:TestItem(),count:4)
-    var slotFrames=(0..<4).map { CGRect(x:CGFloat($0)*100,y:0,width:100,height:63) }
-    var ngHostedDragTarget=CGRect.zero
-    var ngHostedPressX: CGFloat=0
-    var ngHostedDirectDrag=false
-    var fingerAnchorOffset: CGFloat=0
-    var ngGestureGate=NGTabInteractionGate()
-    var lensMorphAnimator: LensMorphAnimator?
-    var ngActivateNative: ((Int) -> Int?)?
-    static let lensGrowSpring=1, lensShrinkSpring=2
-    static let lensOverrun: CGFloat=7.2
-    var tintUpdates=0
-    var nativeCalls=0
-    var allowSelection=true
-    func applyItemTints(selectedAt: Int, animated: Bool) { tintUpdates += 1 }
-    func selectionFrame(for slot: CGRect) -> CGRect { NGTabPresentation.capsule(slot:slot) }
-    func glassFrame(for slot: CGRect) -> CGRect {
-        let pill=selectionFrame(for:slot)
-        return CGRect(x:pill.midX-(pill.width+16)/2,y:pill.midY-35,width:pill.width+16,height:70)
+struct LensMorph { static func transform(mapping: CGRect, onto: CGRect) -> Transform { Transform() } }
+struct FlexGlow { static let spotTravel: CGFloat = 10 }
+final class SelectionAnimator {
+    var frameForCenterX: ((CGFloat) -> CGRect?)?
+    var onFrameChanged: ((CGRect) -> Void)?
+    var active = false
+    func rest(at: CGFloat, immediate: Bool) { active = true }
+    func cancel() { active = false }
+    func follow(x: CGFloat, at: TimeInterval, direct: Bool) {
+        guard active, let frame = frameForCenterX?(x) else { return }
+        onFrameChanged?(frame)
     }
-    func findClosestItemIndex(to point: CGPoint) -> Int {
-        slotFrames.indices.min { abs(slotFrames[$0].midX-point.x) < abs(slotFrames[$1].midX-point.x) } ?? 0
-    }
+}
+struct Item { var ngEnabled = true }
+final class Harness {
+    let ngUseHostPosition = true
+    var isDragging = false, isCollapsingLens = false, isCommittingDrag = false
+    var isUserInteractionEnabled = true, isPillFading = false, flexSpreadStarted = false
+    var selectedIndex = 0, hoveredIndex = -1
+    var slotFrames = (0..<4).map { CGRect(x: CGFloat($0) * 100,y:0,width:100,height:63) }
+    var items = Array(repeating:Item(),count:4)
+    var selectionAnimator: SelectionAnimator?, lensMorphAnimator: LensMorphAnimator?, theseusView: Glass? = Glass()
+    var ngGestureGate = NGTabInteractionGate()
+    var ngFollowFrame: CGRect?, flexSpotCenter: CGPoint?
+    var flexTouchStartX: CGFloat?, flexTouchY: CGFloat?
+    var fingerAnchorOffset: CGFloat = 0, touchDownX: CGFloat = 0, barFollow: CGFloat = 0
+    var currentDragVelocity = CGPoint.zero
+    var flexReleaseScale: CGFloat = 1, flexSpread: CGFloat = 0
+    var pillRestFrame = CGRect.zero
+    var ngActivateNative: ((Int) -> Int?)?, onItemSelected: ((Int) -> Void)?
+    let selectionView = Glass(), liftDriver = Driver(), bodyGainDriver = Driver()
+    let pillFadeDriver = Driver(), flexSpreadDriver = Driver()
+    var opens = 0, closes = 0, refreshes = 0, calls: [Int] = []
+    var accept = true
     init() {
-        ngActivateNative = { [weak self] target in
+        ngActivateNative = { [weak self] index in
             guard let self else { return nil }
-            self.nativeCalls += 1
-            return self.allowSelection ? target : self.selectedIndex
+            self.calls.append(index); return self.accept ? index : self.selectedIndex
         }
-        ngPlaceHostedPill(selectionFrame(for:slotFrames[0]))
+    }
+    func slotFrame(at index: Int) -> CGRect { slotFrames[index] }
+    func glassFrame(for frame: CGRect) -> CGRect { frame }
+    func calculateInterpolatedFrame(for point: CGPoint) -> CGRect? {
+        CGRect(x: point.x-50,y:0,width:100,height:63)
+    }
+    func convertToTheseusContainer(_ r: CGRect) -> CGRect { r }
+    func convertFromTheseusContainer(_ r: CGRect) -> CGRect { r }
+    func placeLens(at r: CGRect) { theseusView?.layer.frame = r }
+    func showTheseus() {
+        opens += 1; theseusView?.isHidden = false
+        selectionAnimator?.cancel() // same cancellation order as production show
+    }
+    func hideTheseus() { closes += 1; isCollapsingLens = true }
+    func ngInvalidatePageFrames() { refreshes += 1 }
+    func resetFlexGlow() {}
+    func updateHoveredItem(lensCenterX: CGFloat) {}
+    func updateFlexGlow() {}
+    func applyBarTransform() {}
+    func startLensActivity() {}
+    func stopLensActivity() {}
+    func startFlexSpread() { flexSpreadStarted = true }
+    func stopLensStretch() {}
+    func setLensFill(_ fill: CGFloat, rim: CGFloat) {}
+    func setLensItemProgress(_ progress: CGFloat) {}
+    func setLensRefraction(_ scale: CGFloat) {}
+    func applyBarLift(_ scale: CGFloat) {}
+    func applyBarBodyGain(progress: CGFloat) {}
+    func updateItemColors() {}
+    func applyItemTints(selectedAt: Int, animated: Bool) {}
+    func updateSelectionViewFrame(animated: Bool) {
+        if slotFrames.indices.contains(selectedIndex) {
+            selectionView.layer.frame = NGTabPresentation.capsule(slot: slotFrames[selectedIndex])
+        }
     }
 '''
-TESTS = r'''
-func same(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a-b) < 0.00001 }
-var cases=0
+TEST = r'''
+var cases = 0
 for rtl in [false,true] {
- for reduced in [false,true] {
-  UIAccessibility.isReduceMotionEnabled=reduced
+ for accept in [false,true] {
   for initial in 0..<4 {
    for pressed in 0..<4 {
     for landing in 0..<4 {
-     let h=TestHosted()
+     let h = Harness(); h.selectedIndex = initial; h.accept = accept
      if rtl { h.slotFrames.reverse() }
-     h.selectedIndex=initial
-     h.ngPlaceHostedPill(h.selectionFrame(for:h.slotFrames[initial]))
-     let iconFrames=h.slotFrames
-     let x=h.slotFrames[pressed].midX
-     h.ngBeginHostedDrag(at:x)
-     precondition(h.isDragging && !h.isCollapsingLens)
-     h.lensMorphAnimator?.tick(0.42)
-     let targetX=h.slotFrames[landing].midX
-     h.ngMoveHostedDrag(to:targetX)
-     h.lensMorphAnimator?.tick(0.68)
-     if abs(targetX-x) >= 0.5 { precondition(same(h.selectionView.frame.midX,targetX)) }
-     h.lensMorphAnimator?.tick(1)
-     precondition(same(h.selectionView.frame.width,h.glassFrame(for:h.slotFrames[pressed]).width))
-     precondition(same(h.selectionView.layer.cornerRadius,min(h.selectionView.frame.width,h.selectionView.frame.height)/2))
-     h.ngFinishHostedDrag(at:targetX)
-     h.lensMorphAnimator?.tick(1)
-     precondition(h.selectedIndex==landing && h.nativeCalls==1 && !h.isDragging && !h.isCollapsingLens)
-     precondition(h.selectionView.frame==h.selectionFrame(for:h.slotFrames[landing]))
-     precondition(iconFrames==h.slotFrames)
-     h.ngFinishHostedDrag(at:targetX)
-     precondition(h.nativeCalls==1)
+     let frames = h.slotFrames
+     let x = frames[pressed].midX, y = frames[landing].midX
+     h.beginInteraction(at: CGPoint(x:x,y:20), rawX:x)
+     precondition(h.opens == 1 && h.isDragging && h.selectionAnimator?.active == true)
+     h.followFinger(at: CGPoint(x:y,y:20))
+     precondition(h.theseusView?.layer.frame.midX == y)
+     h.finishInteraction(rawX:y); h.finishInteraction(rawX:y)
+     precondition(!h.isDragging && h.closes == 1 && h.calls == [landing])
+     precondition(h.selectedIndex == (accept ? landing : initial) && h.slotFrames == frames)
+     h.endDragImmediately()
+     precondition(h.calls == [landing] && !h.isCollapsingLens && h.theseusView?.isHidden == true)
+     precondition(h.selectionView.alpha == 1 && !h.selectionView.isHidden)
+     precondition(h.selectionView.layer.frame == NGTabPresentation.capsule(slot: frames[h.selectedIndex]))
      cases += 1
     }
    }
   }
  }
 }
-UIAccessibility.isReduceMotionEnabled=false
-for rejected in [false,true] {
- let h=TestHosted(); h.allowSelection = !rejected
- h.ngBeginHostedDrag(at:50); h.lensMorphAnimator?.tick(1); h.ngMoveHostedDrag(to:350)
- h.ngFinishHostedDrag(at:350); h.lensMorphAnimator?.tick(0.3)
- h.ngBeginHostedDrag(at:150); h.lensMorphAnimator?.tick(0.5)
- let calls=h.nativeCalls
- h.ngCancelHostedDrag(); h.lensMorphAnimator?.tick(1)
- precondition(h.nativeCalls==calls && !h.isDragging && !h.isCollapsingLens)
- precondition(h.selectionView.frame==h.selectionFrame(for:h.slotFrames[h.selectedIndex]))
- precondition(h.selectedIndex==(rejected ? 0 : 3))
-}
-let h=TestHosted(); h.items[1].ngEnabled=false
-h.ngBeginHostedDrag(at:150); precondition(!h.isDragging && h.nativeCalls==0)
-h.ngBeginHostedDrag(at:CGFloat.nan); precondition(!h.isDragging)
-h.ngBeginHostedDrag(at:50); h.lensMorphAnimator?.tick(1)
-let before=h.selectionView.frame
-h.ngMoveHostedDrag(to:CGFloat.nan); precondition(h.selectionView.frame==before)
-h.ngMoveHostedDrag(to:10000); precondition(same(h.selectionView.frame.midX,357.2))
-h.ngMoveHostedDrag(to:-10000); precondition(same(h.selectionView.frame.midX,42.8))
-h.ngCancelHostedDrag(); precondition(h.nativeCalls==0)
-print("hosted_production_gestures_ok cases=\(cases) cancel_reject_rtl_reduced_motion=ok")
+let h = Harness(); h.items[1].ngEnabled = false
+h.beginInteraction(at: CGPoint(x:150,y:0), rawX:150)
+h.beginInteraction(at: .zero, rawX:CGFloat.nan)
+precondition(h.opens == 0 && !h.isDragging)
+h.beginInteraction(at: CGPoint(x:50,y:0), rawX:50)
+let before = h.theseusView?.layer.frame
+h.followFinger(at: CGPoint(x: CGFloat.nan,y:0))
+precondition(h.theseusView?.layer.frame == before)
+h.finishInteraction(rawX:CGFloat.nan)
+precondition(h.opens == 1 && h.closes == 0 && h.calls.isEmpty && h.theseusView?.isHidden == true)
+print("hosted_production_gestures_ok cases=\(cases) rtl_rejection_cancel=ok")
 '''
 
-def main():
-    with tempfile.TemporaryDirectory(prefix='hosted-gestures-') as tmp:
-        d=Path(tmp); stage(d/'staged')
-        tab=(d/'staged/TheseusTabBar.swift').read_text()
-        signatures=('ngPlaceHostedPill(', 'ngStopHostedPillMotion(', 'ngBeginHostedDrag(',
-                    'ngMoveHostedDrag(', 'ngFinishHostedDrag(', 'ngCancelHostedDrag(')
-        source=STANDINS+'\n'.join(method(tab,x) for x in signatures)+'\n}\n'
-        source+=(ROOT/'Sources/TabPresentation.swift').read_text()+'\n'+TESTS
-        (d/'main.swift').write_text(source)
-        if '--emit' in sys.argv:
-            Path(sys.argv[sys.argv.index('--emit')+1]).write_text(source)
-            print('Extracted six production gesture functions')
-            return
-        subprocess.run(['xcrun','swiftc','-swift-version','5',str(d/'main.swift'),'-o',str(d/'test')],check=True)
-        subprocess.run([str(d/'test')],check=True)
-
-if __name__=='__main__': main()
+with tempfile.TemporaryDirectory(prefix='hosted-gestures-') as temp:
+    d = Path(temp)
+    stage(d/'staged')
+    tab = (d/'staged/TheseusTabBar.swift').read_text()
+    signatures = ('beginInteraction(', 'followFinger(', 'finishInteraction(', 'endDragImmediately()', 'findClosestItemIndex(')
+    model = (ROOT/'Sources/TabPresentation.swift').read_text().replace('import CoreGraphics\n', '')
+    source = d/'main.swift'
+    source.write_text(STANDINS + '\n'.join(method(tab, name) for name in signatures) + '\n}\n' + model + TEST)
+    if '--emit' in sys.argv:
+        Path(sys.argv[sys.argv.index('--emit')+1]).write_bytes(source.read_bytes())
+    else:
+        compiler = ['xcrun', 'swiftc'] if shutil.which('xcrun') else ['swiftc']
+        subprocess.run([*compiler, '-swift-version', '5', str(source), '-o', str(d/'test')], check=True)
+        subprocess.run([str(d/'test')], check=True)

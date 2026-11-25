@@ -117,13 +117,13 @@ def tabbar(s):
         let exclusions = [self, ngExcludedBar].compactMap { $0 }
         backgroundGlassView.setCaptureExcludedViews(exclusions)
         selectionView.setCaptureExcludedViews(exclusions)
-        if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }
+        theseusView?.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })
         contentView.bounds = bounds''')
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
             return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: ngUseHostPosition ? barFrame.minY : 0, width: itemWidth, height: itemHeight)''')
-    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? self : theseusSourceView?.superview\n')
-    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }\n        glassView.isHidden')
+    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? contentView : theseusSourceView?.superview\n')
+    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        glassView.ngNonblockingRendering = ngUseHostPosition\n        glassView.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })\n        glassView.isHidden')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)
         case .cancelled, .failed:
@@ -494,9 +494,6 @@ def motion_policy(s):
         if !ngUseHostPosition || (!isDragging && !isCollapsingLens && lensMorphAnimator?.isRunning != true) {
             updateSelectionViewFrame(animated: false)
         }''')
-    s = replace(s, '        glassView.sourceView = sourceView\n        if let bar', '''        glassView.sourceView = sourceView
-        glassView.ngNonblockingRendering = ngUseHostPosition
-        if let bar''')
     s = replace(s, '        backgroundGlassView.configuration.refraction.interiorSharpness = isDark ? Self.chromeDetailDark : Self.chromeDetailLight',
                 '        backgroundGlassView.configuration.refraction.interiorSharpness = ngUseHostPosition ? 0 : (isDark ? Self.chromeDetailDark : Self.chromeDetailLight)')
     a = s.index('    private func applyBarBodyGain(')
