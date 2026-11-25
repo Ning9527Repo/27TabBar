@@ -74,11 +74,21 @@ def check():
         for marker, end in [('    private let selectionView:', '    /// Native iOS 27 pill'),
                             ('        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')]:
             assert section(tab, marker, end) == section(upstream_tab, marker, end), marker
-        assert tab.count('ngFrostedPlatter = ngUseHostPosition') == 1
-        assert 'chrome.blur.radius = ngUseHostPosition ? 26 : 18' in tab
-        assert 'chrome.blur.sigma = ngUseHostPosition ? 9 : nil' in tab
-        assert 'chrome.refraction.interiorSharpness = ngUseHostPosition ? 0 :' in tab
-        assert 'config.refraction.interiorSharpness = ngUseHostPosition ? 0 :' in tab
+        hosted = section(tab, '    private func ngInstallHostedChrome()', '    private func ngPlaceHostedPill(')
+        assert 'UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialLight))' in tab
+        assert 'ngHostedPlatter.overrideUserInterfaceStyle = .light' in hosted
+        assert 'backgroundGlassView.removeFromSuperview()' in hosted
+        assert 'ngHostedPlatter' in tab and 'ngFrostedPlatter = ngUseHostPosition' not in tab
+        assert 'private func ngBeginHostedDrag(at x: CGFloat)' in tab
+        assert 'private func ngMoveHostedDrag(to x: CGFloat)' in tab
+        assert 'private func ngFinishHostedDrag(at x: CGFloat)' in tab
+        assert 'private func ngCancelHostedDrag(restore: Bool = true)' in tab
+        assert 'selectionView.layer.borderWidth = 0' in tab
+        assert 'selectionView.layer.borderColor = nil' in tab
+        assert 'guard !ngUseHostPosition else { return }' in section(tab, '    private func setBarLifted(', '    private func applyBarLift(')
+        assert 'ngHostedPlatter.frame = bodyFrame' in tab
+        assert 'ngHostedPlatter.frame' in tab and 'ngHostedPlatter.effect' not in tab
+        assert 'applyItemTints(selectedAt: selectedIndex, animated: animate)' in hosted
         assert 'ngTap.require(toFail: pressGesture)' in tab and 'ngTap.require(toFail: panGesture)' in tab
         assert tab.count('if ngUseHostPosition && !ngAcceptGesture(gesture) { return }') == 2
         assert 'ngGestureGate.clear()' in tab
@@ -94,7 +104,20 @@ def check():
         assert 'glassView.ngHostedDragLens = ngUseHostPosition' in setup
         assert 'if !ngUseHostPosition, let sourceView = theseusSourceView' in tab
         assert 'guard sourceView === self, let row = itemsContainerView else { return }' in tab
-        assert 'backgroundGlassView.ngHoldBackdrop(ngHostIsInteracting)' in tab
+        # Hosted press, pan, release and cancellation bypass the renderer entirely.
+        drag = section(tab, '    private func ngBeginHostedDrag(', '    private func ngTrackedLensFrame(')
+        for forbidden in ('showTheseus()', 'applyBarTransform()', 'setBarLifted(', 'captureTwin', 'contentView.transform', 'selectionView.alpha'):
+            assert forbidden not in drag, forbidden
+        assert 'backgroundGlassView.ngHoldBackdrop(ngHostIsInteracting)' not in tab
+        assert 'if ngUseHostPosition { ngBeginHostedDrag(at: location.x); return }' in tab
+        assert 'if ngUseHostPosition { ngMoveHostedDrag(to: convert(location, to: contentView).x); return }' in tab
+        assert 'if ngUseHostPosition { ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x); return }' in tab
+        assert 'if ngUseHostPosition { ngCancelHostedDrag(); return }' in tab
+        assert 'guard !ngUseHostPosition else { return }' in setup
+        assert 'ngActivateNative?(target)' in drag and 'ngGestureGate.clear()' in drag
+        cancel = drag.split('    private func ngCancelHostedDrag(', 1)[1]
+        assert 'ngActivateNative?' not in cancel and 'ngPlaceHostedPill(selectionFrame(for: slotFrames[selectedIndex]))' in cancel
+        assert 'ngPlaceHostedPill(landing)' in drag and 'pillShadeLayer.removeFromSuperlayer()' in hosted
         assert '!isShuttingDown, !ngBackdropHeld' in renderer
         fast = section(renderer, '    private func ngRenderHostedLens(', '    // CAMetalLayer acquisition')
         assert 'originalSourceTexture: plate' in fast and 'itemTexture: items' in fast

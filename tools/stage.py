@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 import hosted_appearance
+import hosted_compositor
 import hosted_motion
 import stability
 
@@ -777,7 +778,8 @@ def stage(dst):
     def adapted_tab(s):
         s = opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s))))
         s = stability.appearance_tab(stability.drag_tab(s, replace), replace)
-        return hosted_appearance.tab(hosted_motion.tab(s, replace), replace)
+        s = hosted_appearance.tab(hosted_motion.tab(s, replace), replace)
+        return hosted_compositor.tab(s, replace)
 
     def adapted_renderer(s):
         s = nonblocking_lens_renderer(renderer_frame_policy(renderer(s)))

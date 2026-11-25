@@ -22,6 +22,8 @@ jobs:
         run: python3 tests/check_source.py
       - name: Check replacement state and capsule geometry
         run: python3 tests/test_replacement.py
+      - name: Check hosted production gestures
+        run: python3 tests/test_hosted_compositor.py
       - name: Check Xcode Metal toolchain
         run: |
           xcodebuild -version
