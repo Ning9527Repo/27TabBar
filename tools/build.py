@@ -15,7 +15,7 @@ import tarfile
 from stage import ROOT, VENDOR, stage
 
 PKG = 'com.ning.theseussystemtabs'
-VERSION = '0.1.4'
+VERSION = '0.1.5'
 MIN_IOS = '16.0'
 NAME = 'TheseusSystemTabs'
 BUNDLE = NAME + 'Resources.bundle'
@@ -191,7 +191,7 @@ def build(arch, sdk):
     run(*SDK_TOOL, 'swiftc', '-target', target, '-sdk', sdk, '-swift-version', '5', '-parse-as-library',
         '-O', '-whole-module-optimization', '-emit-library', '-module-name', NAME,
         '-module-cache-path', out/'ModuleCache', '-import-objc-header', ROOT/'Sources/Host.h',
-        *sorted(staged.glob('*.swift')), ROOT/'Sources/Bridge.swift', host, *frameworks,
+        *sorted(staged.glob('*.swift')), *sorted((ROOT/'Sources').glob('*.swift')), host, *frameworks,
         '-Xlinker', '-install_name', '-Xlinker', install_name, '-o', dylib)
     shader = VENDOR/'Sources/Theseus/Shaders/TheseusShaders.metal'
     air, metal = out/'Theseus.air', out/'default.metallib'

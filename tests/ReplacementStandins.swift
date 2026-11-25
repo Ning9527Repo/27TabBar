@@ -3,7 +3,7 @@ import CoreGraphics
 
 struct AutoMask: OptionSet { let rawValue: Int }
 class UIColor: NSObject { static let clear = UIColor(); static let blue = UIColor() }
-class UIImage: NSObject {}
+class UIImage: NSObject { enum Mode { case alwaysTemplate }; func withRenderingMode(_ mode: Mode) -> UIImage { self } }
 class CALayer: NSObject {
     var mask: CALayer?
     var frame = CGRect.zero
@@ -51,7 +51,7 @@ class UIView: NSObject {
 class UIViewController { var viewIfLoaded: UIView? }
 class UIWindow: UIView { var rootViewController: UIViewController?; var safeAreaInsets = (bottom: CGFloat(34), top: CGFloat(0)) }
 class UIScrollView: UIView { var contentOffset = CGPoint.zero }
-class UIControl: UIView { var isEnabled = true; var isSelected = false }
+class UIControl: UIView { var isEnabled = true; var isSelected = false; var nativeTitle: String?; var nativeImage: UIImage?; var accessibilityLabel: String? }
 class UITabBarItem: NSObject {
     var title: String?; var image: UIImage?; var selectedImage: UIImage?; var accessibilityLabel: String?
     var badgeValue: String?; var badgeColor: UIColor?; var isEnabled = true
@@ -68,7 +68,7 @@ struct TheseusTabBarItem {
 class TheseusTabBar: UIView {
     weak var ngExcludedBar: UITabBar?
     var ngUseHostPosition = false; var ngHostFrame = CGRect.zero
-    var ngGlassDidPresent: (() -> Void)?; var onItemSelected: ((Int) -> Void)?
+    var ngGlassDidPresent: (() -> Void)?; var ngActivateNative: ((Int) -> Int?)?
     var items: [TheseusTabBarItem] = []; var selectedIndex = 0
     var barHeight: CGFloat = 63; var preferredItemWidth: CGFloat = 66
     var selectedTintColor = UIColor.blue; var unselectedTintColor = UIColor.clear
@@ -77,6 +77,8 @@ class TheseusTabBar: UIView {
     init(frame: CGRect) { super.init(); self.frame = frame; bounds = CGRect(origin: .zero, size: frame.size) }
     func ngApplyHostFrame(_ f: CGRect) { ngHostFrame = f; frame = f; bounds = CGRect(origin: .zero, size: f.size) }
     func ngPrepareReplacement() { prepared += 1 }
+    func ngRefreshItems(_ newItems: [TheseusTabBarItem], changed: [Int]) { items = newItems }
+    func ngApplySelection(_ index: Int) { if selectedIndex != index { selectedIndex = index } }
     func invalidateBackground() { invalidations += 1 }
 }
 class UIApplication {
@@ -95,6 +97,17 @@ enum UIAccessibility {
 }
 func NGTabResourceBundlePath() -> String? { CommandLine.arguments[1] }
 func NGSystemTabControls(_ bar: UITabBar, _ count: Int) -> [UIControl]? { bar.controls }
-func NGActivateSystemTabControl(_ bar: UITabBar, _ control: UIControl) -> Bool { true }
+func NGSystemTabButtonTitle(_ control: UIControl, _ badge: String?) -> String? { control.nativeTitle == badge ? nil : control.nativeTitle }
+func NGSystemTabButtonImage(_ control: UIControl) -> UIImage? { control.nativeImage }
+var nativeActivations = 0
+var nativeAllowsSelection = true
+func NGActivateSystemTabControl(_ bar: UITabBar, _ control: UIControl) -> Bool {
+    nativeActivations += 1
+    if nativeAllowsSelection, let index = bar.controls?.firstIndex(where: { $0 === control }) {
+        bar.selectedItem = bar.items?[index]
+        SystemTabsBridge.update(bar) // Synchronous native layout must not re-enter selection.
+    }
+    return true
+}
 func NGSystemTabNote(_ reason: String, _ bar: UITabBar?) {}
 func NGSystemTabIsCapturing() -> Bool { false }

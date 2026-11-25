@@ -2,6 +2,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 NSArray<UIControl *> * _Nullable NGSystemTabControls(UITabBar *bar, NSInteger expectedCount);
+NSString * _Nullable NGSystemTabButtonTitle(UIControl *control, NSString * _Nullable badgeValue);
+UIImage * _Nullable NGSystemTabButtonImage(UIControl *control);
 BOOL NGActivateSystemTabControl(UITabBar *bar, UIControl *control);
 void NGSystemTabCaptureBegin(void);
 void NGSystemTabCaptureEnd(void);

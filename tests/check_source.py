@@ -47,7 +47,7 @@ def check():
         else:
             raise AssertionError('Missing upstream anchors accepted')
         changed = {p.name for p in a.glob('*.swift') if p.read_bytes() != next((ROOT/'Vendor/Theseus/Sources').rglob(p.name)).read_bytes()}
-        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift'}
+        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift','BackgroundCaptureDraw.swift','ViewLayerCapture.swift'}
         # Exercise real ar/tar writer with explicit fixture bytes for both path variants.
         # These fixture archives are never copied to dist or presented as installable.
         for arch in ('arm64','arm64e'):

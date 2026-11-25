@@ -109,6 +109,49 @@ NSArray<UIControl *> *NGSystemTabControls(UITabBar *bar, NSInteger expectedCount
     return controls;
 }
 
+NSString *NGSystemTabButtonTitle(UIControl *control, NSString *badgeValue) {
+    // Do not use badge text or a full accessibility utterance as a visible title.
+    NSMutableArray<UIView *> *queue = [control.subviews mutableCopy];
+    NSString *title = nil;
+    for (NSUInteger i = 0; i < queue.count && i < 32; ++i) {
+        UIView *view = queue[i];
+        NSString *name = NSStringFromClass(object_getClass(view));
+        if ([name rangeOfString:@"badge" options:NSCaseInsensitiveSearch].location != NSNotFound) continue;
+        if ([view isKindOfClass:UILabel.class]) {
+            UILabel *label = (UILabel *)view;
+            NSString *text = [label.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (text.length > 0 && ![text isEqualToString:badgeValue] && (!view.hidden || title == nil)) {
+                if (!view.hidden) return text;
+                title = text;
+            }
+        }
+        if (queue.count + view.subviews.count <= 32) [queue addObjectsFromArray:view.subviews];
+    }
+    return title;
+}
+
+UIImage *NGSystemTabButtonImage(UIControl *control) {
+    NSMutableArray<UIView *> *queue = [control.subviews mutableCopy];
+    UIImage *hiddenImage = nil;
+    for (NSUInteger i = 0; i < queue.count && i < 32; ++i) {
+        UIView *view = queue[i];
+        NSString *name = NSStringFromClass(object_getClass(view));
+        if ([name rangeOfString:@"badge" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+            [name rangeOfString:@"background" options:NSCaseInsensitiveSearch].location != NSNotFound) continue;
+        if ([view isKindOfClass:UIImageView.class]) {
+            UIImageView *imageView = (UIImageView *)view;
+            UIImage *image = imageView.image;
+            if (image && image.size.width > 0 && image.size.height > 0 &&
+                image.size.width <= 96 && image.size.height <= 96) {
+                if (!view.hidden && view.alpha > 0.01) return image;
+                if (!hiddenImage) hiddenImage = image;
+            }
+        }
+        if (queue.count + view.subviews.count <= 32) [queue addObjectsFromArray:view.subviews];
+    }
+    return hiddenImage;
+}
+
 BOOL NGActivateSystemTabControl(UITabBar *bar, UIControl *control) {
     if (!bar || !control || !control.enabled || !control.window || !bar.window) return NO;
     // UIKit handles selection before dispatching its private control event.

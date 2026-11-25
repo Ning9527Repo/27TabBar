@@ -22,12 +22,17 @@ private struct TabData: Equatable {
     let badgeColor: UIColor?
     let enabled: Bool
 
-    @MainActor init(_ item: UITabBarItem, _ control: UIControl) {
+    @MainActor init(_ item: UITabBarItem, _ control: UIControl, selected: Bool, previous: TabData?) {
         identity = ObjectIdentifier(item)
-        title = item.title
-        icon = item.image
-        selectedIcon = item.selectedImage
-        accessibility = item.accessibilityLabel
+        // Keep only metadata from this exact item if UIKit is rebuilding its button.
+        let native = NGTabPresentation.title(item.title) ?? NGTabPresentation.title(NGSystemTabButtonTitle(control, item.badgeValue))
+        title = native ?? previous?.title ?? NGTabPresentation.shortLabel(item.accessibilityLabel)
+            ?? NGTabPresentation.shortLabel(control.accessibilityLabel)
+        let rendered = item.image != nil && item.selectedImage != nil ? nil : NGSystemTabButtonImage(control)
+        icon = item.image ?? (selected ? nil : rendered) ?? previous?.icon
+            ?? (rendered ?? item.selectedImage)?.withRenderingMode(.alwaysTemplate)
+        selectedIcon = item.selectedImage ?? (selected ? rendered : nil) ?? previous?.selectedIcon
+        accessibility = item.accessibilityLabel ?? control.accessibilityLabel
         badge = item.badgeValue
         badgeColor = item.badgeColor
         enabled = item.isEnabled && control.isEnabled
@@ -62,7 +67,7 @@ private struct TabData: Equatable {
         glass.autoresizingMask = []
         glass.barHeight = 63
         glass.ngUseHostPosition = true
-        glass.onItemSelected = { [weak self] index in self?.activate(index) }
+        glass.ngActivateNative = { [weak self] index in self?.activate(index) }
     }
 
     deinit { timer?.invalidate() }
@@ -170,10 +175,14 @@ private struct TabData: Equatable {
         let unselected = bar.unselectedItemTintColor ?? TheseusTabBar.nativeUnselectedTint
         if glass.unselectedTintColor != unselected { glass.unselectedTintColor = unselected }
         if tabs != data {
+            if data.map(\.identity) == tabs.map(\.identity) {
+                glass.ngRefreshItems(tabs.map { $0.makeItem() }, changed: tabs.indices.filter { tabs[$0] != data[$0] })
+            } else {
+                glass.items = tabs.map { $0.makeItem() }
+            }
             data = tabs
-            glass.items = tabs.map { $0.makeItem() }
         }
-        if !activationPending, glass.selectedIndex != index { glass.selectedIndex = index }
+        if !activationPending { glass.ngApplySelection(index) }
         // Sample while a scroll view behind the bar is moving. Update stable
         // content at a slower cadence (e.g. badges, asynchronously loaded cells).
         refreshTick = (refreshTick + 1) % 8
@@ -200,10 +209,10 @@ private struct TabData: Equatable {
         return result
     }
 
-    private func activate(_ index: Int) {
+    private func activate(_ index: Int) -> Int? {
         guard let bar = native, !activationPending, let items = bar.items, items.indices.contains(index),
               data.indices.contains(index), ObjectIdentifier(items[index]) == data[index].identity,
-              let buttons = NGSystemTabControls(bar, items.count) else { return }
+              let buttons = NGSystemTabControls(bar, items.count) else { return nil }
         activationPending = true
         defer {
             DispatchQueue.main.async { [weak self] in
@@ -212,10 +221,13 @@ private struct TabData: Equatable {
                 SystemTabsBridge.update(bar)
             }
         }
-        guard items[index].isEnabled else { return }
-        if !NGActivateSystemTabControl(bar, buttons[index]) {
+        guard items[index].isEnabled else { return nil }
+        guard NGActivateSystemTabControl(bar, buttons[index]) else {
             NGSystemTabNote("native-action-rejected", bar)
+            return nil
         }
+        guard let selected = bar.selectedItem else { return nil }
+        return data.firstIndex { $0.identity == ObjectIdentifier(selected) }
     }
 }
 
@@ -289,9 +301,18 @@ private struct TabData: Equatable {
         guard previous != nil || Bundle.hasTabMetalResources else {
             NGSystemTabNote("resources-unavailable", bar); return
         }
-        let tabs = zip(items, buttons).map { TabData($0.0, $0.1) }
+        let oldData = previous?.data ?? []
+        let tabs = items.indices.map { i in
+            let item = items[i]
+            return TabData(item, buttons[i], selected: i == index,
+                           previous: oldData.first { $0.identity == ObjectIdentifier(item) })
+        }
+        guard tabs.allSatisfy({ $0.title != nil || $0.icon != nil || $0.selectedIcon != nil }) else {
+            NGSystemTabNote("tab-content-update-deferred", bar); return
+        }
         let state: SystemTabsState
         if let previous, previous.glass.superview === parent {
+            guard !previous.activationPending else { return }
             state = previous
         } else {
             detach(bar)
@@ -302,6 +323,7 @@ private struct TabData: Equatable {
             state.glass.ngHostFrame = frame
             state.apply(tabs, index: index, bar: bar, frame: frame)
             state.attach(to: bar, in: parent, at: frame)
+            return
         }
         state.apply(tabs, index: index, bar: bar, frame: frame)
     }

@@ -24,7 +24,25 @@ def replace(text, old, new, count=1):
 
 def tabbar(s):
     s = replace(s, '    public var selectedIndex: Int = 0 {', '''    weak var ngExcludedBar: UIView?
-    var ngUseHostPosition = false
+    private weak var ngPress: UILongPressGestureRecognizer?
+    private weak var ngPan: UIPanGestureRecognizer?
+    private lazy var ngTap = UITapGestureRecognizer(target: self, action: #selector(ngHandleTap(_:)))
+    var ngActivateNative: ((Int) -> Int?)?
+    var ngUseHostPosition = false {
+        didSet {
+            ngTap.isEnabled = ngUseHostPosition
+            ngPress?.minimumPressDuration = ngUseHostPosition ? 0.15 : 0
+            ngPress?.allowableMovement = ngUseHostPosition ? 10 : .greatestFiniteMagnitude
+            backgroundGlassView.ngOpaqueBackdrop = ngUseHostPosition
+            selectionView.ngOpaqueBackdrop = ngUseHostPosition
+        }
+    }
+
+    @objc private func ngHandleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended, !slotFrames.isEmpty else { return }
+        selectItem(at: findClosestItemIndex(to: gesture.location(in: contentView)))
+    }
+
     var ngHostFrame = CGRect.zero
     var ngGlassDidPresent: (() -> Void)? {
         didSet { backgroundGlassView.onPresent = ngGlassDidPresent }
@@ -35,7 +53,27 @@ def tabbar(s):
         selectionView.ngPrepareReplacement()
     }
 
-    var ngHostIsInteracting: Bool { isDragging }
+    var ngHostIsInteracting: Bool { isDragging || isCollapsingLens }
+
+    private var ngRefreshingItems = false
+
+    func ngRefreshItems(_ refreshed: [TheseusTabBarItem], changed: [Int]) {
+        guard itemViews.count == refreshed.count else { items = refreshed; return }
+        ngRefreshingItems = true
+        items = refreshed
+        ngRefreshingItems = false
+        for i in changed {
+            let selected = i == selectedIndex
+            itemViews[i].configure(with: items[i], isSelected: selected)
+            itemViews[i].tintColor = selected ? (appliedRestingTint ?? selectedTintColor) : unselectedTint()
+        }
+    }
+
+    func ngApplySelection(_ index: Int) {
+        guard index != selectedIndex else { return }
+        if isCollapsingLens { endDragImmediately() }
+        selectedIndex = index
+    }
 
     func ngApplyHostFrame(_ next: CGRect) {
         if isDragging { endDragImmediately() }
@@ -52,9 +90,48 @@ def tabbar(s):
     var ngLabel: String?
     var ngEnabled = true
 ''')
+    s = replace(s, '            rebuildItemViews()\n            setNeedsLayout()', '            guard !ngRefreshingItems else { return }\n            rebuildItemViews()\n            setNeedsLayout()')
     s = replace(s, '        let contentWidth = min(bounds.width,', '        if ngUseHostPosition { return bounds }\n        let contentWidth = min(bounds.width,')
-    s = replace(s, '        let size = pillSize\n', '        let base = pillSize\n        let size = CGSize(width: ngUseHostPosition ? max(base.width, itemFrame.width - 4) : base.width, height: base.height)\n')
-    s = replace(s, '        let size = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize\n', '        let base = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize\n        let size = CGSize(width: ngUseHostPosition ? max(base.width, selectionFrame(for: itemFrame).width + 16) : base.width, height: base.height)\n')
+    s = replace(s, '        let size = pillSize\n', '''        if ngUseHostPosition {
+            return NGTabPresentation.capsule(slot: itemFrame, platter: backgroundView.frame,
+                                             itemInset: barContentInset)
+        }
+        let size = pillSize
+''')
+    s = replace(s, '        let size = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize\n', '''        let base = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize
+        let size = CGSize(width: ngUseHostPosition ? max(base.width, max(pillSize.width, itemFrame.width - 4) + 16) : base.width,
+                          height: base.height)
+''')
+    s = replace(s, '        pressGesture.minimumPressDuration = 0', '        pressGesture.minimumPressDuration = 0\n        ngPress = pressGesture')
+    s = replace(s, '        addGestureRecognizer(panGesture)', '''        addGestureRecognizer(panGesture)
+        ngPan = panGesture
+        ngTap.isEnabled = ngUseHostPosition
+        ngTap.delegate = self
+        ngTap.require(toFail: pressGesture)
+        ngTap.require(toFail: panGesture)
+        addGestureRecognizer(ngTap)
+''')
+    s = replace(s, '            UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: 0.75) {', '''            let options: UIView.AnimationOptions = ngUseHostPosition ? [.beginFromCurrentState, .allowUserInteraction] : []
+            UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.88,
+                           initialSpringVelocity: 0.75, options: options) {
+'''.rstrip('\n'))
+    s = replace(s, '    private func selectItem(at index: Int) {\n', '''    private func selectItem(at index: Int) {
+        if ngUseHostPosition {
+            guard items.indices.contains(index), items[index].ngEnabled,
+                  let confirmed = ngActivateNative?(index), items.indices.contains(confirmed) else { return }
+            if isCollapsingLens, confirmed != selectedIndex { endDragImmediately() }
+            selectedIndex = confirmed
+            return
+        }
+''')
+    s = replace(s, '        guard index != selectedIndex else { return }\n        selectedIndex = index', '        guard items.indices.contains(index), items[index].ngEnabled, index != selectedIndex else { return }\n        selectedIndex = index')
+    s = replace(s, '        guard let pan = gestureRecognizer as? UIPanGestureRecognizer,', '''        if ngUseHostPosition, gestureRecognizer === ngTap { return !slotFrames.isEmpty && !isDragging }
+        if ngUseHostPosition, let pan = gestureRecognizer as? UIPanGestureRecognizer, pan === ngPan {
+            let velocity = pan.velocity(in: self)
+            return !slotFrames.isEmpty && abs(velocity.x) > abs(velocity.y)
+        }
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
+'''.rstrip('\n'))
     s = replace(s, '        super.layoutSubviews()\n\n        contentView.bounds = bounds', '''        super.layoutSubviews()
 
         let exclusions = [self, ngExcludedBar].compactMap { $0 }
@@ -67,12 +144,6 @@ def tabbar(s):
             return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: 0, width: itemWidth, height: itemHeight)''')
     s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? self : theseusSourceView?.superview\n')
     s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }\n        glassView.isHidden')
-    s = replace(s, '''        guard index != selectedIndex else { return }
-        selectedIndex = index
-        onItemSelected?(index)''', '''        guard items.indices.contains(index), items[index].ngEnabled else { return }
-        guard index != selectedIndex || ngUseHostPosition else { return }
-        selectedIndex = index
-        onItemSelected?(index)''')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)
         case .cancelled, .failed:
@@ -87,12 +158,36 @@ def tabbar(s):
             isCommittingDrag = false
             onItemSelected?(landingIndex)
         }''', '''        if items.indices.contains(landingIndex), items[landingIndex].ngEnabled {
-            let shouldSend = landingIndex != selectedIndex || ngUseHostPosition
-            isCommittingDrag = true
-            selectedIndex = landingIndex
-            isCommittingDrag = false
-            if shouldSend { onItemSelected?(landingIndex) }
+            if ngUseHostPosition {
+                if let confirmed = ngActivateNative?(landingIndex), items.indices.contains(confirmed) {
+                    isCommittingDrag = true
+                    selectedIndex = confirmed
+                    isCommittingDrag = false
+                }
+            } else if landingIndex != selectedIndex {
+                isCommittingDrag = true
+                selectedIndex = landingIndex
+                isCommittingDrag = false
+                onItemSelected?(landingIndex)
+            }
         }''')
+    s = replace(s, '            currentDragVelocity = gesture.velocity(in: self)\n', '''            currentDragVelocity = gesture.velocity(in: self)
+            if ngUseHostPosition { followFinger(at: gesture.location(in: self)) }
+''')
+    s = replace(s, '        gestureRecognizer.view === self && otherGestureRecognizer.view === self',
+                '        !ngUseHostPosition && gestureRecognizer.view === self && otherGestureRecognizer.view === self')
+    s = replace(s, '        glassView.layer.transform = CATransform3DIdentity\n        let releaseFrame = glassView.frame.insetBy(dx: glassView.shape.widthInset, dy: glassView.shape.heightInset)', '''        let displayedFrame = glassView.layer.frame
+        let scaleX = displayedFrame.width / max(glassView.bounds.width, 1)
+        let scaleY = displayedFrame.height / max(glassView.bounds.height, 1)
+        let releaseFrame = displayedFrame.insetBy(dx: glassView.shape.widthInset * scaleX,
+                                                  dy: glassView.shape.heightInset * scaleY)
+        glassView.layer.transform = CATransform3DIdentity''')
+    s = replace(s, '        if glassView.shape.widthInset != 0 || glassView.shape.heightInset != 0 {\n            glassView.frame = releaseFrame',
+                '        if glassView.frame != releaseFrame || glassView.shape.widthInset != 0 || glassView.shape.heightInset != 0 {\n            glassView.frame = releaseFrame')
+    s = replace(s, '            if landingIndex < self.slotFrames.count {\n                animator?.retarget(to: self.convertToTheseusContainer(self.selectionFrame(for: self.slotFrame(at: landingIndex))))', '''            let target = self.ngUseHostPosition ? self.selectedIndex : landingIndex
+            if self.slotFrames.indices.contains(target) {
+                animator?.retarget(to: self.convertToTheseusContainer(self.selectionFrame(for: self.slotFrame(at: target))))''')
+    s = replace(s, '        NSLayoutConstraint.activate([\n            stackView.centerXAnchor', '        NSLayoutConstraint.activate([\n            stackView.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -4),\n            stackView.centerXAnchor')
     s = replace(s, '    private let captureTitleView = UIImageView()', '''    private let captureTitleView = UIImageView()
     private let ngBadgeLabel = UILabel()
     private let ngTwinBadge = UILabel()
@@ -136,12 +231,16 @@ def tabbar(s):
 
 def renderer(s):
     s = replace(s, '        let viewFrame = metalLayer.frame\n', '        let viewFrame = hostView?.bounds ?? metalLayer.frame\n')
+    s = replace(s, '              let superlayer = metalLayer.superlayer else {',
+                '              let superlayer = hostView?.layer ?? metalLayer.superlayer else {')
+    s = replace(s, '                    excludedViews: excludedViews\n', '''                    excludedViews: excludedViews,\n                    opaqueBackdrop: (hostView as? TheseusView)?.ngOpaqueBackdrop == true\n'''.rstrip('\n') + '\n', count=2)
     s = replace(s, '        willCapture?()\n        defer { didCapture?() }', '        NGSystemTabCaptureBegin()\n        willCapture?()\n        defer { didCapture?(); NGSystemTabCaptureEnd() }')
     return replace(s, '            commandBuffer.addCompletedHandler { _ in\n                DispatchQueue.main.async(execute: onPresent)', '            commandBuffer.addCompletedHandler { buffer in\n                guard buffer.status == .completed else { return }\n                DispatchQueue.main.async(execute: onPresent)')
 
 
 def surface(s):
-    s = replace(s, '    public var onPresent: (() -> Void)? {\n        didSet { renderer?.onPresent = onPresent }\n    }', '''    private var ngWaitingForPresent = false
+    s = replace(s, '    public var onPresent: (() -> Void)? {\n        didSet { renderer?.onPresent = onPresent }\n    }', '''    var ngOpaqueBackdrop = false
+    private var ngWaitingForPresent = false
     private var ngPresented = false
 
     func ngPrepareReplacement() {
@@ -187,6 +286,17 @@ def surface(s):
     return replace(s, '        let paddingX = padding.x * scale\n', '        metalLayerView?.frame = bounds.insetBy(dx: -padding.x, dy: -padding.y)\n        let paddingX = padding.x * scale\n')
 
 
+def opaque_capture(s, rect):
+    s = replace(s, '        excludedViews: [UIView] = []\n',
+                '        excludedViews: [UIView] = [],\n        opaqueBackdrop: Bool = false\n')
+    line = '        ctx.clear(' + rect + ')\n'
+    return replace(s, line, line + '''        if opaqueBackdrop {
+            ctx.setFillColor(UIColor.systemBackground.resolvedColor(with: sourceView.traitCollection).cgColor)
+            ctx.fill(''' + rect + ''')
+        }
+''')
+
+
 def compensation(s):
     return replace(s, '                glass.backgroundColor = glass.captureVeilColor', '''                let layer = CALayer()
                 layer.frame = glass.bounds.insetBy(dx: glass.shape.widthInset, dy: glass.shape.heightInset)
@@ -199,7 +309,9 @@ def compensation(s):
 def stage(dst):
     verify_vendor()
     patches = {'TheseusTabBar.swift':tabbar,'TheseusRenderer.swift':renderer,
-               'TheseusView.swift':surface,'CaptureCompensation.swift':compensation}
+               'TheseusView.swift':surface,'CaptureCompensation.swift':compensation,
+               'BackgroundCaptureDraw.swift':lambda s: opaque_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
+               'ViewLayerCapture.swift':lambda s: opaque_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
     dst.mkdir(parents=True,exist_ok=True)
     for p in sorted((VENDOR/'Sources/Theseus').rglob('*.swift')):
         s = p.read_text()
