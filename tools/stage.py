@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import sys
 
+import stability
+
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / 'Vendor/Theseus'
 
@@ -770,13 +772,28 @@ def opaque_selection_surface(s):
 
 def stage(dst):
     verify_vendor()
-    patches = {'TheseusTabBar.swift':lambda s: opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s)))),
-               'TheseusRenderer.swift':lambda s: nonblocking_lens_renderer(renderer_frame_policy(renderer(s))),
-               'TheseusView.swift':lambda s: opaque_selection_surface(motion_surface(surface_frame_policy(surface(s)))),
+    def adapted_tab(s):
+        s = opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s))))
+        return stability.appearance_tab(stability.drag_tab(s, replace), replace)
+
+    def adapted_renderer(s):
+        s = nonblocking_lens_renderer(renderer_frame_policy(renderer(s)))
+        return stability.appearance_renderer(stability.drag_renderer(s, replace), replace)
+
+    def adapted_surface(s):
+        s = opaque_selection_surface(motion_surface(surface_frame_policy(surface(s))))
+        return stability.appearance_surface(s, replace)
+
+    def adapted_capture(s, rect):
+        return stability.bounded_capture(opaque_capture(s, rect), replace)
+
+    patches = {'TheseusTabBar.swift':adapted_tab,
+               'TheseusRenderer.swift':adapted_renderer,
+               'TheseusView.swift':adapted_surface,
                'VisualEffectFallback.swift':frosted_platter_fallback,
-               'CaptureCompensation.swift':compensation,
-               'BackgroundCaptureDraw.swift':lambda s: opaque_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
-               'ViewLayerCapture.swift':lambda s: opaque_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
+               'CaptureCompensation.swift':lambda s: stability.bounded_compensation(compensation(s), replace),
+               'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
+               'ViewLayerCapture.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
     dst.mkdir(parents=True,exist_ok=True)
     for p in sorted((VENDOR/'Sources/Theseus').rglob('*.swift')):
         s = p.read_text()

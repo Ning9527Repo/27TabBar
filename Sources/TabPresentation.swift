@@ -22,10 +22,33 @@ struct NGTabInteractionGate {
     mutating func clear() { active = nil }
 }
 
+// Preserve the initial press animation until the finger actually moves.
+// Once tracking starts it stays direct, including on reversals and at rest.
+struct NGTabDirectFollow {
+    private var origin: CGFloat? = nil
+    private(set) var isTracking = false
+
+    mutating func update(_ x: CGFloat) -> Bool {
+        guard x.isFinite else { return false }
+        if let origin {
+            if abs(x - origin) >= 1 { isTracking = true }
+        } else {
+            origin = x
+        }
+        return isTracking
+    }
+
+    mutating func reset() {
+        origin = nil
+        isTracking = false
+    }
+}
+
 // Equal-width slots share one center for the icon, title and selection.
 // Outer platter geometry stays fixed. Its ends receive the same 4 pt gap
 // as the gap between adjacent capsule positions.
 enum NGTabPresentation {
+    static let appearanceDuration: TimeInterval = 0.15
     private static let gap: CGFloat = 4
 
     static func slotStrip(platter: CGRect) -> CGRect {

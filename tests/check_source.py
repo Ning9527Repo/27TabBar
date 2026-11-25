@@ -60,19 +60,19 @@ def check():
         solid = surface.split('    func ngEnableSolidSelection() {', 1)[1].split('    var ngNonblockingRendering', 1)[0]
         for invariant in ('renderer = nil', 'providesCaptureSnapshot = false', 'sourceView = nil',
                           'fallbackView?.isHidden = true', 'metalLayerView?.isHidden = true',
-                          'backgroundColor = UIColor(white: tone, alpha: 1)', 'layer.cornerRadius = shape.cornerRadius'):
+                          'UIColor(white: tone, alpha: 1)', 'backgroundColor = fill', 'layer.cornerRadius = shape.cornerRadius'):
             assert invariant in solid, invariant
         for method in ('setupRenderer()', 'updateRenderingMode()', 'ngPrepareReplacement()',
-                       'ngInvalidateBackdrop(after delay: TimeInterval)'):
-            assert method + ' {\n        guard !ngSolidSelection else { return }' in surface
+                       'ngRefreshPlatter(crossfade: Bool, onReveal: ((Bool) -> Void)? = nil) -> Bool'):
+            guard = 'return false' if method.startswith('ngRefreshPlatter') else 'return'
+            assert method + ' {\n        guard !ngSolidSelection else { ' + guard + ' }' in surface
         assert 'NGTabPresentation.slotStrip(platter: backgroundView.frame)' in tab
         assert 'NGTabPresentation.capsule(slot: itemFrame)' in tab
         def section(text, marker, end):
             start = text.index(marker)
             return text[start:text.index(end, start)]
         for marker, end in [('    private let selectionView:', '    /// Native iOS 27 pill'),
-                            ('        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)'),
-                            ('    private func followFinger(', '    private func finishInteraction(')]:
+                            ('        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')]:
             assert section(tab, marker, end) == section(upstream_tab, marker, end), marker
         assert tab.count('ngFrostedPlatter = ngUseHostPosition') == 1
         assert 'chrome.blur.radius = ngUseHostPosition ? 26 : 18' in tab
@@ -87,18 +87,30 @@ def check():
         assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
         assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
         assert 'self.selectionView.alpha = share' in shrink and 'glassView.alpha = 1 - share' in shrink
-        assert 'if self.ngUseHostPosition { self.ngFollowFrame = frame }' in tab
+        assert 'direct: ngUseHostPosition' in tab
+        assert 'if direct, ngDragCenter.update(x)' in tab and 'centerX = frame.midX' in tab
+        assert 'transform.m41 += containerFrame.midX - current.midX' in tab
+        assert 'if glassView.bounds != bounds { glassView.bounds = bounds }' in tab
         assert 'metalLayer?.presentsWithTransaction = continuousUpdate && !ngNonblockingRendering' in renderer
-        assert 'if !ngNonblockingRendering {\n            waitForGPUCompletion()' in renderer
+        assert 'ngDrawableQueue.async' in renderer and 'self.ngDrawableEpoch == epoch' in renderer
+        assert 'ngNonblockingRendering ? ngTakeDrawable(metalLayer) : metalLayer.nextDrawable()' in renderer
+        assert renderer.count('limitCompensation: ngNonblockingRendering') == 2
+        assert 'if ngNonblockingRendering {\n            ngDrawableEpoch &+= 1\n            ngReadyDrawable = nil\n        } else {\n            waitForGPUCompletion()' in renderer
         assert 'commandBuffer.addCompletedHandler { _ in recycle() }' in renderer
         assert 'let renderScale = currentRefractionQuality.renderScale' in renderer
         assert 'let onSnapshot = self.onSnapshot' in renderer
-        assert surface.count('self.ngBackdropEpoch == epoch') == 3
-        assert 'ngOpaqueBackdrop && !isUsingFallback' in surface
-        assert 'let fill = renderedCenterColor ?? cover.backgroundColor' in surface
-        assert 'insertSubview(cover, aboveSubview: metal)' in surface
-        assert 'cover.layer.removeAllAnimations()' in surface
-        assert 'UIView.animate(withDuration: 0.08' in surface
+        assert surface.count('self.ngBackdropEpoch == epoch') == 2
+        ordinary = section(tab, '    private func ngInvalidatePageFrames()', '    private var ngRefreshingItems')
+        assert 'ngRefreshPlatter(crossfade: false)' in ordinary
+        refresh = section(surface, '    func ngRefreshPlatter(', '    func ngPrepareReplacement()')
+        assert 'ngSwitchCover' not in surface and 'metal.alpha' not in refresh
+        assert 'if crossfade, ngPresented, !isUsingFallback' in refresh
+        assert 'ngAppearanceEpoch == epoch' in refresh and '0.35' in refresh
+        assert 'reveal?(true)' in refresh and 'if notify { reveal?(false) }' in refresh
+        assert 'self?.ngFinishHostedPalette(animated: animated)' in tab
+        assert 'drawable.addPresentedHandler' in renderer and 'shown.presentedTime > 0' in renderer
+        assert 'bar.superview?.traitCollection.userInterfaceStyle == nativeStyle' in (ROOT/'Sources/Bridge.swift').read_text()
+        assert 'fade.fromValue = previous' in solid and 'fade.toValue = fill.cgColor' in solid
         assert 'captureSnapshot = nil\n        captureSnapshotOverride = nil' in surface
         assert 'metalLayerView?.alpha = 0' in surface and 'metalLayerView?.alpha = 1' in surface
         # Exercise real ar/tar writer with explicit fixture bytes for both path variants.

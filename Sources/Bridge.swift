@@ -168,9 +168,12 @@ private struct TabData: Equatable {
         if glass.effectiveUserInterfaceLayoutDirection != bar.effectiveUserInterfaceLayoutDirection {
             glass.semanticContentAttribute = bar.effectiveUserInterfaceLayoutDirection == .rightToLeft ? .forceRightToLeft : .forceLeftToRight
         }
-        if glass.overrideUserInterfaceStyle != bar.traitCollection.userInterfaceStyle {
-            glass.overrideUserInterfaceStyle = bar.traitCollection.userInterfaceStyle
-        }
+        // Normally both views inherit the same appearance from their parent.
+        // Don't pin the overlay to the last polled style during a system transition.
+        let nativeStyle = bar.traitCollection.userInterfaceStyle
+        let style = bar.overrideUserInterfaceStyle != .unspecified ? bar.overrideUserInterfaceStyle
+            : (bar.superview?.traitCollection.userInterfaceStyle == nativeStyle ? .unspecified : nativeStyle)
+        if glass.overrideUserInterfaceStyle != style { glass.overrideUserInterfaceStyle = style }
         if glass.selectedTintColor != bar.tintColor { glass.selectedTintColor = bar.tintColor }
         let unselected = bar.unselectedItemTintColor ?? TheseusTabBar.nativeUnselectedTint
         if glass.unselectedTintColor != unselected { glass.unselectedTintColor = unselected }
