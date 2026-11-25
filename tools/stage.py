@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 
+import capsule_policy
 import hosted_appearance
 import hosted_compositor
 import hosted_motion
@@ -274,25 +275,6 @@ def compensation(s):
 
 
 def tab_frame_policy(s):
-    s = replace(s, '    private func updateEdgeLayers() {\n        let rect = backgroundView.bounds\n        guard !rect.isEmpty else { return }\n        let margin: CGFloat = 1\n        let frame = rect.insetBy(dx: -margin, dy: -margin)\n        barEdgeShadeLayer.frame = frame\n        barEdgeGlowLayer.frame = frame', '''    private func updateEdgeLayers() {
-        let rect = backgroundView.bounds
-        guard !rect.isEmpty else { return }
-        let margin: CGFloat = 1
-        let rawFrame = rect.insetBy(dx: -margin, dy: -margin)
-        let frameScale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
-        let frame: CGRect
-        if ngUseHostPosition, window != nil {
-            let inWindow = backgroundView.convert(rawFrame, to: nil)
-            frame = backgroundView.convert(NGTabPresentation.pixelAligned(inWindow, scale: frameScale), from: nil)
-        } else {
-            frame = rawFrame
-        }
-        barEdgeShadeLayer.frame = frame
-        barEdgeGlowLayer.frame = frame''')
-    s = replace(s, '        let key = [rect.width, rect.height, isDarkAppearance ? 1 : 0] + (amplitude ?? [])', '''        let imageOffset = CGPoint(x: rect.minX - frame.minX, y: rect.minY - frame.minY)
-        let key = [rect.width, rect.height, frame.minX, frame.minY, frame.width, frame.height, scale, isDarkAppearance ? 1 : 0] + (amplitude ?? [])''')
-    s = replace(s, 'outline: rect.offsetBy(dx: margin, dy: margin)', 'outline: rect.offsetBy(dx: imageOffset.x, dy: imageOffset.y)')
-    s = replace(s, 'let body = rect.insetBy(dx: Self.bodyInset, dy: Self.bodyInset).offsetBy(dx: margin, dy: margin)', 'let body = rect.insetBy(dx: Self.bodyInset, dy: Self.bodyInset).offsetBy(dx: imageOffset.x, dy: imageOffset.y)')
     s = replace(s, '    var ngHostIsInteracting: Bool { isDragging || isCollapsingLens }', '''    var ngHostIsInteracting: Bool { isDragging || isCollapsingLens }
 
     private func ngInvalidatePageFrames(selectionDelay: TimeInterval = 0) {
@@ -617,13 +599,10 @@ def motion_policy(s):
         guard !releaseFrame.isEmpty, !animationBase.isEmpty else { endDragImmediately(); return }''')
     s = replace(s, '            glassView.layer.transform = LensMorph.transform(mapping: releaseFrame, onto: frame)', '''            glassView.layer.transform = LensMorph.transform(mapping: animationBase, onto: frame)
             if self.ngUseHostPosition {
-                let pill = self.convertFromTheseusContainer(frame)
-                self.selectionView.bounds = CGRect(origin: .zero, size: pill.size)
-                self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)
-                self.selectionView.shape.cornerRadius = pill.height / 2
-                let capsuleShare = min(max(progress, 0), 1)
-                self.selectionView.alpha = capsuleShare
-                glassView.alpha = 1 - capsuleShare
+                // The settled pill only takes over once the lens is near the target.
+                let share = min(max((progress - 0.72) / 0.28, 0), 1)
+                self.selectionView.alpha = share
+                glassView.alpha = 1 - share
             }''')
     s = replace(s, '            self.isCollapsingLens = false\n            self.selectionView.isHidden = false', '''            self.isCollapsingLens = false
             if self.ngUseHostPosition {
@@ -813,25 +792,28 @@ def stage(dst):
         s = opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s))))
         s = stability.appearance_tab(stability.drag_tab(s, replace), replace)
         s = hosted_appearance.tab(hosted_motion.tab(s, replace), replace)
-        return hosted_compositor.tab(s, replace)
+        return capsule_policy.tab(hosted_compositor.tab(s, replace), replace)
 
     def adapted_renderer(s):
         s = nonblocking_lens_renderer(renderer_frame_policy(renderer(s)))
         s = stability.appearance_renderer(stability.drag_renderer(s, replace), replace)
-        return hosted_appearance.renderer(hosted_motion.renderer(s, replace), replace)
+        s = hosted_appearance.renderer(hosted_motion.renderer(s, replace), replace)
+        return capsule_policy.renderer(s, replace)
 
     def adapted_surface(s):
         s = opaque_selection_surface(motion_surface(surface_frame_policy(surface(s))))
         s = stability.appearance_surface(s, replace)
-        return hosted_appearance.surface(hosted_motion.surface(s, replace), replace)
+        s = hosted_appearance.surface(hosted_motion.surface(s, replace), replace)
+        return capsule_policy.surface(s, replace)
 
     def adapted_capture(s, rect):
-        return stability.bounded_capture(opaque_capture(s, rect), replace)
+        s = stability.bounded_capture(opaque_capture(s, rect), replace)
+        return capsule_policy.capture(s, rect, replace)
 
     patches = {'TheseusTabBar.swift':adapted_tab,
                'TheseusRenderer.swift':adapted_renderer,
                'TheseusView.swift':adapted_surface,
-               'VisualEffectFallback.swift':frosted_platter_fallback,
+               'VisualEffectFallback.swift':lambda s: capsule_policy.fallback(frosted_platter_fallback(s), replace),
                'CaptureCompensation.swift':lambda s: stability.bounded_compensation(compensation(s), replace),
                'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
                'ViewLayerCapture.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}

@@ -2,8 +2,7 @@
 
 
 def tab(s, rep):
-    s = rep(s, '    private func ngSyncPlatterHold() {\n        if ngUseHostPosition { backgroundGlassView.ngHoldBackdrop(ngHostIsInteracting) }\n    }', '''    private lazy var ngHostedBacking = UIView()
-    private lazy var ngHostedPlatter = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialLight))
+    s = rep(s, '    private func ngSyncPlatterHold() {\n        if ngUseHostPosition { backgroundGlassView.ngHoldBackdrop(ngHostIsInteracting) }\n    }', '''    private lazy var ngHostedPlatter = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialLight))
 
     private func ngInstallHostedChrome() {
         // Use one fixed light blur plus an independently tinted surface. The
@@ -19,12 +18,7 @@ def tab(s, rep):
         ngHostedPlatter.overrideUserInterfaceStyle = .light
         ngHostedPlatter.isUserInteractionEnabled = false
         ngHostedPlatter.clipsToBounds = true
-        ngHostedBacking.isUserInteractionEnabled = false
-        ngHostedBacking.isOpaque = true
-        ngHostedBacking.layer.cornerCurve = .continuous
-        ngHostedBacking.layer.masksToBounds = true
-        backgroundView.insertSubview(ngHostedBacking, at: 0)
-        backgroundView.insertSubview(ngHostedPlatter, aboveSubview: ngHostedBacking)
+        backgroundView.insertSubview(ngHostedPlatter, at: 0)
         ngApplyHostedAppearance(animated: false)
     }
 
@@ -48,7 +42,6 @@ def tab(s, rep):
 
     private func ngApplyHostedAppearance(animated: Bool) {
         let dark = systemIsDark
-        let backing = UIColor(white: dark ? 0.055 : 0.92, alpha: 1)
         let reduce = UIAccessibility.isReduceTransparencyEnabled
         let tint = UIColor(white: dark ? 0.04 : 1, alpha: reduce ? 1 : (dark ? 0.76 : 0.22))
         let animate = animated && window != nil && !UIAccessibility.isReduceMotionEnabled
@@ -59,19 +52,7 @@ def tab(s, rep):
         adaptDarkWeight = dark ? 1 : 0
         adaptDarkTarget = adaptDarkWeight
         ngSetHostedColor(tint.cgColor, on: ngHostedPlatter.contentView.layer, key: "backgroundColor", animated: animate)
-        ngHostedPlatter.effect = nil
-        ngHostedPlatter.backgroundColor = backing
-        ngHostedPlatter.contentView.backgroundColor = backing
-        ngHostedPlatter.contentView.layer.backgroundColor = backing.cgColor
-        ngHostedPlatter.contentView.layer.isOpaque = true
-        ngHostedBacking.backgroundColor = backing
-        ngHostedPlatter.isOpaque = true
-        ngHostedPlatter.contentView.isOpaque = true
         selectionView.ngSetSolidSelectionTone(dark: dark, animated: animate)
-        selectionView.isOpaque = true
-        selectionView.layer.isOpaque = true
-        selectionView.layer.cornerCurve = .continuous
-        selectionView.layer.masksToBounds = true
         // Keep one opaque selection surface; the old simultaneous lens/pill
         // compositing and its second outline are not used in hosted gestures.
         selectionView.layer.borderWidth = 0
@@ -110,15 +91,8 @@ def tab(s, rep):
     s = s[:a] + '''        if ngUseHostPosition {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
-            let bodyInWindow = backgroundView.convert(bodyFrame, to: nil)
-            let alignedBody = backgroundView.convert(NGTabPresentation.pixelAligned(bodyInWindow, scale: scale), from: nil)
-            ngHostedBacking.frame = alignedBody
-            ngHostedBacking.layer.cornerRadius = alignedBody.height / 2
-            ngHostedPlatter.frame = alignedBody
-            ngHostedPlatter.layer.cornerRadius = alignedBody.height / 2
-            ngHostedPlatter.layer.cornerCurve = .continuous
-            ngHostedPlatter.layer.masksToBounds = true
+            ngHostedPlatter.frame = bodyFrame
+            ngHostedPlatter.layer.cornerRadius = bodyFrame.height / 2
             CATransaction.commit()
             updateEdgeLayers(rebuildCapture: false)
         } else {
@@ -182,7 +156,6 @@ def tab(s, rep):
             guard items.indices.contains(pressed), items[pressed].ngEnabled else { return }
         }
 ''')
-    s = rep(s, '        glassView.resumeRendering()\n', '        if ngUseHostPosition { glassView.alpha = 1 }\n        glassView.resumeRendering()\n')
     s = rep(s, '        selectionAnimator?.rest(at: restingCenterX, immediate: ngUseHostPosition)\n\n        showTheseus()', '''        showTheseus()
         selectionAnimator?.rest(at: restingCenterX, immediate: ngUseHostPosition)''')
     s = rep(s, '        guard isDragging else { return }\n        let landingIndex', '''        guard isDragging else { return }

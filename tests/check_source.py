@@ -20,6 +20,7 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -77,17 +78,17 @@ def check():
         hosted = section(tab, '    private func ngInstallHostedChrome()', '    private func ngInvalidatePageFrames(')
         for token in ('ngHostedPlatter.overrideUserInterfaceStyle = .light',
                       'backgroundGlassView.removeFromSuperview()', 'pillShadeLayer.removeFromSuperlayer()',
-                      'ngHostedBacking.isOpaque = true', 'ngSetHostedColor(tint.cgColor',
+                      'ngSetHostedColor(tint.cgColor',
                       'selectionView.ngSetSolidSelectionTone(dark: dark, animated: animate)'):
             assert token in hosted, token
         assert 'UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialLight))' in tab
-        assert 'ngHostedPlatter.frame = alignedBody' in tab and 'ngHostedPlatter.effect = nil' in tab
-        assert 'ngHostedBacking.frame = alignedBody' in tab
-        assert 'ngHostedPlatter.contentView.layer.isOpaque = true' in tab
-        assert 'selectionView.layer.isOpaque = true' in tab
+        assert 'ngHostedPlatter.frame = bodyFrame' in tab
+        assert 'ngHostedPlatter.effect = nil' not in tab
+        assert 'ngHostedBacking' not in tab
+        assert 'alpha: reduce ? 1 : (dark ? 0.76 : 0.22)' in hosted
+        assert 'ngHostedPlatter.isOpaque = true' not in hosted
         assert 'selectionView.layer.cornerCurve = .continuous' in tab
         assert 'NGTabPresentation.pixelAligned(screenFrame, scale: scale)' in tab
-        assert 'NGTabPresentation.pixelAligned(inWindow, scale: frameScale)' in tab
         for method in ('setBarLifted(_ lifted: Bool)', 'applyBarTransform()', 'applyBarBodyGain(progress: CGFloat)'):
             assert 'private func ' + method + ' {\n        guard !ngUseHostPosition else { return }' in tab
         assert 'ngTap.require(toFail: pressGesture)' in tab and 'ngTap.require(toFail: panGesture)' in tab
@@ -108,9 +109,20 @@ def check():
         assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
         assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
         assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
-        assert 'let capsuleShare = min(max(progress, 0), 1)' in shrink
-        assert 'self.selectionView.alpha = capsuleShare' in shrink and 'glassView.alpha = 1 - capsuleShare' in shrink
-        assert 'self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)' in shrink
+        release = section(tab, '    private func ngPlaceOpaqueReleasePill(', '    private func hideTheseus()')
+        assert 'selectionView.alpha = 1' in release and 'selectionView.isHidden = false' in release
+        assert 'selectionView.center = CGPoint(x: pill.midX, y: pill.midY)' in release
+        assert shrink.index('ngPlaceOpaqueReleasePill(releaseFrame)') < shrink.index('animator.morph(')
+        assert 'self.ngPlaceOpaqueReleasePill(frame)' in shrink and 'glassView.alpha = 1 - min(max(progress, 0), 1)' in shrink
+        assert 'selectionView.alpha = 0' not in shrink
+        assert 'if ngUseHostPosition {\n            glassView.ngCapsuleBackdrop = selectionView.renderedCenterColor' in setup
+        for name in ('BackgroundCaptureDraw.swift', 'ViewLayerCapture.swift'):
+            capture = (a/name).read_text()
+            assert 'if let solidBackdrop {' in capture and 'ctx.setFillColor(solidBackdrop)' in capture
+            assert 'if solidBackdrop == nil { sourceView.layer.render(in: ctx) }' in capture
+        assert renderer.count('solidBackdrop: (hostView as? TheseusView)?.ngCapsuleBackdrop?.cgColor') == 2
+        fallback = (a/'VisualEffectFallback.swift').read_text()
+        assert 'blurView.isHidden = ngCapsuleBackdrop != nil' in fallback
         assert 'progress - 0.72' not in shrink
         assert 'glassView.pauseRendering()' in shrink
         begin = section(tab, '    private func beginInteraction(', '    /// `time` is the touch')
