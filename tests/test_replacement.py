@@ -101,6 +101,28 @@ let beforeDisabled = nativeActivations
 precondition(glass.ngActivateNative?(0) == nil && nativeActivations == beforeDisabled)
 drainMain()
 SystemTabsBridge.detach(bar);precondition(bar.layer.mask==nil)
+// Drive the actual gesture gate with overlapping recognizer lifetimes.
+let press = NSObject(), pan = NSObject()
+let pressID = ObjectIdentifier(press), panID = ObjectIdentifier(pan)
+var motion = NGTabInteractionGate()
+for _ in 0..<100 {
+    precondition(motion.begin(pressID))
+    precondition(!motion.begin(panID) && !motion.accepts(panID) && !motion.end(panID))
+    precondition(motion.accepts(pressID) && motion.end(pressID) && !motion.end(pressID))
+    precondition(motion.begin(panID) && motion.accepts(panID))
+    motion.clear()
+    precondition(!motion.end(panID) && !motion.accepts(panID))
+}
+// The endpoint is recovered from what is displayed, not the raw drawable size.
+let lensBounds = CGRect(x:0,y:0,width:120,height:76)
+let visible = CGRect(x:40,y:10,width:60,height:38)
+precondition(NGTabPresentation.visibleLens(frame: visible, bounds: lensBounds, inset: CGSize(width:4,height:2))
+             == CGRect(x:42,y:11,width:56,height:36))
+precondition(NGTabPresentation.visibleLens(frame: visible, bounds: lensBounds, inset: CGSize(width:-2,height:-4))
+             == CGRect(x:39,y:8,width:62,height:42))
+precondition(NGTabPresentation.visibleLens(frame: visible, bounds: .zero, inset: .zero) == nil)
+precondition(NGTabPresentation.visibleLens(frame: .null, bounds: lensBounds, inset: .zero) == nil)
+precondition(NGTabPresentation.visibleLens(frame: visible, bounds: lensBounds, inset: CGSize(width:60,height:0)) == nil)
 var geometry=TestCapsules();var cases=0
 for ios26 in [false,true] {
  geometry.usesIOS26Look = ios26

@@ -1,6 +1,27 @@
 import Foundation
 import CoreGraphics
 
+// One recognizer owns an interaction, including its end or cancellation.
+struct NGTabInteractionGate {
+    private var active: ObjectIdentifier? = nil
+
+    mutating func begin(_ owner: ObjectIdentifier) -> Bool {
+        guard active == nil else { return false }
+        active = owner
+        return true
+    }
+
+    func accepts(_ owner: ObjectIdentifier) -> Bool { active == owner }
+
+    mutating func end(_ owner: ObjectIdentifier) -> Bool {
+        guard accepts(owner) else { return false }
+        active = nil
+        return true
+    }
+
+    mutating func clear() { active = nil }
+}
+
 // Equal-width slots share one center for the icon, title and selection.
 // Outer platter geometry stays fixed. Its ends receive the same 4 pt gap
 // as the gap between adjacent capsule positions.
@@ -15,6 +36,18 @@ enum NGTabPresentation {
     static func capsule(slot: CGRect) -> CGRect {
         guard slot.width > gap, slot.height > 2 * gap else { return slot }
         return slot.insetBy(dx: gap / 2, dy: gap)
+    }
+
+    // Insets are unscaled shape coordinates. Recover the visible footprint
+    // without changing the drawable's bounds or removing its transform.
+    static func visibleLens(frame: CGRect, bounds: CGRect, inset: CGSize) -> CGRect? {
+        guard frame.minX.isFinite, frame.minY.isFinite, frame.width.isFinite, frame.height.isFinite,
+              bounds.width.isFinite, bounds.height.isFinite, inset.width.isFinite, inset.height.isFinite,
+              frame.width > 0, frame.height > 0, bounds.width > 0, bounds.height > 0,
+              bounds.width > 2 * inset.width, bounds.height > 2 * inset.height else { return nil }
+        let visible = frame.insetBy(dx: inset.width * (frame.width / bounds.width),
+                                    dy: inset.height * (frame.height / bounds.height))
+        return visible.width.isFinite && visible.height.isFinite && !visible.isEmpty ? visible : nil
     }
 
     static func title(_ candidates: String?...) -> String? {

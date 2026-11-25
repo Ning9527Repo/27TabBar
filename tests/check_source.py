@@ -47,27 +47,39 @@ def check():
         else:
             raise AssertionError('Missing upstream anchors accepted')
         changed = {p.name for p in a.glob('*.swift') if p.read_bytes() != next((ROOT/'Vendor/Theseus/Sources').rglob(p.name)).read_bytes()}
-        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift','BackgroundCaptureDraw.swift','ViewLayerCapture.swift'}
+        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift','BackgroundCaptureDraw.swift','ViewLayerCapture.swift','VisualEffectFallback.swift'}
         tab = (a/'TheseusTabBar.swift').read_text()
         renderer = (a/'TheseusRenderer.swift').read_text()
         surface = (a/'TheseusView.swift').read_text()
         upstream_tab = next((ROOT/'Vendor/Theseus/Sources').rglob('TheseusTabBar.swift')).read_text()
-        assert 'ngInvalidatePageFrames()\n        selectedIndex = index' in tab
+        assert 'ngInvalidatePageFrames(selectionDelay: TheseusSettings.shared.areMorphAnimationsEnabled ? 0.22 : 0)' in tab
         assert 'if confirmed != selectedIndex { ngInvalidatePageFrames() }' in tab
         assert 'NGTabPresentation.slotStrip(platter: backgroundView.frame)' in tab
         assert 'NGTabPresentation.capsule(slot: itemFrame)' in tab
-        for marker, end in [('    private let backgroundGlassView:', '    /// Native iOS 27 pill'),
-                            ('    private func followFinger(', '    private func finishInteraction('),
-                            ('    private func applyBarBodyGain(', '    private func startFlexSpread('),
-                            ('private final class SelectionAnimator', 'private final class LensMorphAnimator')]:
-            def section(text):
-                start = text.index(marker)
-                return text[start:text.index(end, start)]
-            assert section(tab) == section(upstream_tab), marker
-        assert 'pressGesture.minimumPressDuration = 0' in tab
-        assert 'pressGesture.allowableMovement = .greatestFiniteMagnitude' in tab
-        assert 'ngTap' not in tab and 'ngInteractiveLens' not in renderer
-        assert 'metalLayer?.presentsWithTransaction = continuousUpdate' in renderer
+        def section(text, marker, end):
+            start = text.index(marker)
+            return text[start:text.index(end, start)]
+        for marker, end in [('    private let selectionView:', '    /// Native iOS 27 pill'),
+                            ('        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)'),
+                            ('    private func followFinger(', '    private func finishInteraction(')]:
+            assert section(tab, marker, end) == section(upstream_tab, marker, end), marker
+        assert tab.count('ngFrostedPlatter = ngUseHostPosition') == 1
+        assert 'chrome.blur.radius = ngUseHostPosition ? 26 : 18' in tab
+        assert 'chrome.blur.sigma = ngUseHostPosition ? 9 : nil' in tab
+        assert 'chrome.refraction.interiorSharpness = ngUseHostPosition ? 0 :' in tab
+        assert 'config.refraction.interiorSharpness = ngUseHostPosition ? 0 :' in tab
+        assert 'ngTap.require(toFail: pressGesture)' in tab and 'ngTap.require(toFail: panGesture)' in tab
+        assert tab.count('if ngUseHostPosition && !ngAcceptGesture(gesture) { return }') == 2
+        assert 'ngGestureGate.clear()' in tab
+        shrink = section(tab, '    private func hideTheseus()', '    /// Places the lens without resizing')
+        assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
+        assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
+        assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
+        assert 'self.selectionView.alpha = share' in shrink and 'glassView.alpha = 1 - share' in shrink
+        assert 'if self.ngUseHostPosition { self.ngFollowFrame = frame }' in tab
+        assert 'metalLayer?.presentsWithTransaction = continuousUpdate && !ngNonblockingRendering' in renderer
+        assert 'if !ngNonblockingRendering {\n            waitForGPUCompletion()' in renderer
+        assert 'commandBuffer.addCompletedHandler { _ in recycle() }' in renderer
         assert 'let renderScale = currentRefractionQuality.renderScale' in renderer
         assert 'let onSnapshot = self.onSnapshot' in renderer
         assert surface.count('self.ngBackdropEpoch == epoch') == 3

@@ -282,6 +282,9 @@ private struct TabData: Equatable {
             parent.insertSubview(previous.glass, aboveSubview: bar)
         }
         previous?.preserveReplacement(bar)
+        // Native selection can synchronously trigger layout. Reassert the mask,
+        // but leave content/selection work to the already queued readback.
+        if previous?.activationPending == true { return }
         // These conditions suppress updates, not the claimed replacement. Model
         // or presentation alpha during a tab transition never restores native UI.
         guard UIApplication.shared.applicationState != .background,
@@ -313,7 +316,6 @@ private struct TabData: Equatable {
         }
         let state: SystemTabsState
         if let previous, previous.glass.superview === parent {
-            guard !previous.activationPending else { return }
             state = previous
         } else {
             detach(bar)
