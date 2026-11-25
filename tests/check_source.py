@@ -52,8 +52,19 @@ def check():
         renderer = (a/'TheseusRenderer.swift').read_text()
         surface = (a/'TheseusView.swift').read_text()
         upstream_tab = next((ROOT/'Vendor/Theseus/Sources').rglob('TheseusTabBar.swift')).read_text()
-        assert 'ngInvalidatePageFrames(selectionDelay: TheseusSettings.shared.areMorphAnimationsEnabled ? 0.22 : 0)' in tab
         assert 'if confirmed != selectedIndex { ngInvalidatePageFrames() }' in tab
+        assert tab.count('selectionView.ngEnableSolidSelection()') == 1
+        assert 'selectionView.ngInvalidateBackdrop' not in tab
+        assert 'if !ngUseHostPosition { selectionView.sourceView = source }' in tab
+        assert 'if !self.ngUseHostPosition, self.selectionView.sourceView == nil {' in tab
+        solid = surface.split('    func ngEnableSolidSelection() {', 1)[1].split('    var ngNonblockingRendering', 1)[0]
+        for invariant in ('renderer = nil', 'providesCaptureSnapshot = false', 'sourceView = nil',
+                          'fallbackView?.isHidden = true', 'metalLayerView?.isHidden = true',
+                          'backgroundColor = UIColor(white: tone, alpha: 1)', 'layer.cornerRadius = shape.cornerRadius'):
+            assert invariant in solid, invariant
+        for method in ('setupRenderer()', 'updateRenderingMode()', 'ngPrepareReplacement()',
+                       'ngInvalidateBackdrop(after delay: TimeInterval)'):
+            assert method + ' {\n        guard !ngSolidSelection else { return }' in surface
         assert 'NGTabPresentation.slotStrip(platter: backgroundView.frame)' in tab
         assert 'NGTabPresentation.capsule(slot: itemFrame)' in tab
         def section(text, marker, end):

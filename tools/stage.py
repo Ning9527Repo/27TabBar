@@ -702,11 +702,77 @@ def frosted_platter_fallback(s):
         blurView.effect = UIBlurEffect(style: style)''')
 
 
+def opaque_selection_tab(s):
+    s = replace(s, '''            selectionView.ngOpaqueBackdrop = ngUseHostPosition
+            selectionView.ngSelectionBackdrop = ngUseHostPosition''',
+                '            if ngUseHostPosition { selectionView.ngEnableSolidSelection() }')
+    s = replace(s, '        selectionView.ngPrepareReplacement()',
+                '        if !ngUseHostPosition { selectionView.ngPrepareReplacement() }')
+    s = replace(s, '''    private func ngInvalidatePageFrames(selectionDelay: TimeInterval = 0) {
+        backgroundGlassView.ngInvalidateBackdrop(after: 0)
+        selectionView.ngInvalidateBackdrop(after: selectionDelay)''', '''    private func ngInvalidatePageFrames() {
+        backgroundGlassView.ngInvalidateBackdrop(after: 0)''')
+    s = replace(s, 'ngInvalidatePageFrames(selectionDelay: TheseusSettings.shared.areMorphAnimationsEnabled ? 0.22 : 0)',
+                'ngInvalidatePageFrames()')
+    s = replace(s, '            selectionView.sourceView = source',
+                '            if !ngUseHostPosition { selectionView.sourceView = source }')
+    return replace(s, '                if self.selectionView.sourceView == nil {',
+                   '                if !self.ngUseHostPosition, self.selectionView.sourceView == nil {')
+
+
+def opaque_selection_surface(s):
+    s = replace(s, '    var ngSelectionBackdrop = false', '''    private var ngSolidSelection = false
+
+    // Hosted selection is an opaque tint, not another capture of the page.
+    // Keep this same view so the pill geometry and motion do not change.
+    func ngEnableSolidSelection() {
+        guard !ngSolidSelection else { return }
+        ngSolidSelection = true
+        ngBackdropEpoch &+= 1
+        ngWaitingForPresent = false
+        renderer?.stopRendering()
+        renderer = nil
+        providesCaptureSnapshot = false
+        captureSnapshotOverride = nil
+        sourceView = nil
+        fallbackView?.isHidden = true
+        ngSwitchCover?.isHidden = true
+        metalLayerView?.isHidden = true
+        ngUpdateSolidSelection()
+    }
+
+    private func ngUpdateSolidSelection() {
+        let tone: CGFloat = traitCollection.userInterfaceStyle == .dark ? 0.26 : 0.88
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        backgroundColor = UIColor(white: tone, alpha: 1)
+        layer.cornerRadius = shape.cornerRadius
+        CATransaction.commit()
+    }
+'''.rstrip('\n'))
+    s = replace(s, 'let neutral: CGFloat = ngSelectionBackdrop ? (dark ? 0.26 : 0.88) : (dark ? 0.18 : 0.96)',
+                'let neutral: CGFloat = dark ? 0.18 : 0.96')
+    s = replace(s, '        didSet {\n            renderer?.updateConfiguration(configuration)',
+                '        didSet {\n            if ngSolidSelection { ngUpdateSolidSelection(); return }\n            renderer?.updateConfiguration(configuration)')
+    s = replace(s, '    var renderedCenterColor: UIColor? {\n        guard let snapshot',
+                '    var renderedCenterColor: UIColor? {\n        if ngSolidSelection { return backgroundColor }\n        guard let snapshot')
+    # Let lens captures draw the solid fill normally; never substitute a live page image.
+    s = replace(s, 'var captureMetalHost: UIView? { metalLayerView }',
+                'var captureMetalHost: UIView? { ngSolidSelection ? nil : metalLayerView }')
+    for signature in ('func ngInvalidateBackdrop(after delay: TimeInterval)',
+                      'func ngPrepareReplacement()', 'private func setupRenderer()',
+                      'private func updateRenderingMode()'):
+        line = '    ' + signature + ' {\n'
+        s = replace(s, line, line + '        guard !ngSolidSelection else { return }\n')
+    return replace(s, '        super.traitCollectionDidChange(previousTraitCollection)\n        fallbackView?',
+                   '        super.traitCollectionDidChange(previousTraitCollection)\n        if ngSolidSelection { ngUpdateSolidSelection(); return }\n        fallbackView?')
+
+
 def stage(dst):
     verify_vendor()
-    patches = {'TheseusTabBar.swift':lambda s: motion_policy(tab_frame_policy(tabbar(s))),
+    patches = {'TheseusTabBar.swift':lambda s: opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s)))),
                'TheseusRenderer.swift':lambda s: nonblocking_lens_renderer(renderer_frame_policy(renderer(s))),
-               'TheseusView.swift':lambda s: motion_surface(surface_frame_policy(surface(s))),
+               'TheseusView.swift':lambda s: opaque_selection_surface(motion_surface(surface_frame_policy(surface(s)))),
                'VisualEffectFallback.swift':frosted_platter_fallback,
                'CaptureCompensation.swift':compensation,
                'BackgroundCaptureDraw.swift':lambda s: opaque_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
