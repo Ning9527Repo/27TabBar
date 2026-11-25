@@ -90,7 +90,7 @@ private struct TabData: Equatable {
         }
         timer = Timer(timeInterval: 1.0 / 12, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, let bar = self.native else { return }
+                guard let self, let bar = self.native, !self.glass.ngHostIsInteracting else { return }
                 SystemTabsBridge.update(bar)
             }
         }
@@ -185,6 +185,7 @@ private struct TabData: Equatable {
         if !activationPending { glass.ngApplySelection(index) }
         // Sample while a scroll view behind the bar is moving. Update stable
         // content at a slower cadence (e.g. badges, asynchronously loaded cells).
+        guard !glass.ngHostIsInteracting else { return }
         refreshTick = (refreshTick + 1) % 8
         let scroll = sampleScroll(in: bar)
         if scroll != scrollSample || refreshTick == 0 {

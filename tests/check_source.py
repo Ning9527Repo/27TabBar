@@ -47,7 +47,23 @@ def check():
         else:
             raise AssertionError('Missing upstream anchors accepted')
         changed = {p.name for p in a.glob('*.swift') if p.read_bytes() != next((ROOT/'Vendor/Theseus/Sources').rglob(p.name)).read_bytes()}
-        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift','BackgroundCaptureDraw.swift','ViewLayerCapture.swift'}
+        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift','BackgroundCaptureDraw.swift','ViewLayerCapture.swift','VisualEffectFallback.swift'}
+        tab = (a/'TheseusTabBar.swift').read_text()
+        renderer = (a/'TheseusRenderer.swift').read_text()
+        surface = (a/'TheseusView.swift').read_text()
+        assert 'ngInvalidatePageFrames(after: 0.24)\n        selectedIndex = index' in tab
+        assert 'if confirmed != selectedIndex { ngInvalidatePageFrames(after: 0.15) }' in tab
+        assert 'ngUseHostPosition ? 0.06 : Self.pillDetail' in tab
+        assert 'if ngUseHostPosition { return isDarkAppearance ? 0.08 : 0.10 }' in tab
+        assert tab.count('config.blur.radius = 18') == 2
+        assert 'selectionAnimator?.onFrameChanged?(frame)' in tab
+        assert 'continuousUpdate && !ngInteractiveLens' in renderer
+        assert 'framesInFlight < (ngInteractiveLens ? 1 : Self.maxFramesInFlight)' in renderer
+        assert '1.0 / 30.0 - 0.001' in renderer and 'ngLastCapture = now' in renderer
+        assert 'let onSnapshot = self.onSnapshot' in renderer
+        assert surface.count('self.ngBackdropEpoch == epoch') == 2
+        assert 'captureSnapshot = nil\n        captureSnapshotOverride = nil' in surface
+        assert 'metalLayerView?.alpha = 0' in surface and 'metalLayerView?.alpha = 1' in surface
         # Exercise real ar/tar writer with explicit fixture bytes for both path variants.
         # These fixture archives are never copied to dist or presented as installable.
         for arch in ('arm64','arm64e'):

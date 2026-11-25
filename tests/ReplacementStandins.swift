@@ -73,6 +73,7 @@ class TheseusTabBar: UIView {
     var barHeight: CGFloat = 63; var preferredItemWidth: CGFloat = 66
     var selectedTintColor = UIColor.blue; var unselectedTintColor = UIColor.clear
     static let nativeUnselectedTint = UIColor.clear
+    var ngHostIsInteracting = false
     var prepared = 0; var invalidations = 0
     init(frame: CGRect) { super.init(); self.frame = frame; bounds = CGRect(origin: .zero, size: frame.size) }
     func ngApplyHostFrame(_ f: CGRect) { ngHostFrame = f; frame = f; bounds = CGRect(origin: .zero, size: f.size) }
