@@ -77,11 +77,17 @@ def check():
         hosted = section(tab, '    private func ngInstallHostedChrome()', '    private func ngInvalidatePageFrames(')
         for token in ('ngHostedPlatter.overrideUserInterfaceStyle = .light',
                       'backgroundGlassView.removeFromSuperview()', 'pillShadeLayer.removeFromSuperlayer()',
-                      'selectionView.layer.borderWidth = 0', 'ngSetHostedColor(tint.cgColor',
+                      'ngHostedBacking.isOpaque = true', 'ngSetHostedColor(tint.cgColor',
                       'selectionView.ngSetSolidSelectionTone(dark: dark, animated: animate)'):
             assert token in hosted, token
         assert 'UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialLight))' in tab
-        assert 'ngHostedPlatter.frame = bodyFrame' in tab and 'ngHostedPlatter.effect' not in tab
+        assert 'ngHostedPlatter.frame = alignedBody' in tab and 'ngHostedPlatter.effect = nil' in tab
+        assert 'ngHostedBacking.frame = alignedBody' in tab
+        assert 'ngHostedPlatter.contentView.layer.isOpaque = true' in tab
+        assert 'selectionView.layer.isOpaque = true' in tab
+        assert 'selectionView.layer.cornerCurve = .continuous' in tab
+        assert 'NGTabPresentation.pixelAligned(screenFrame, scale: scale)' in tab
+        assert 'NGTabPresentation.pixelAligned(inWindow, scale: frameScale)' in tab
         for method in ('setBarLifted(_ lifted: Bool)', 'applyBarTransform()', 'applyBarBodyGain(progress: CGFloat)'):
             assert 'private func ' + method + ' {\n        guard !ngUseHostPosition else { return }' in tab
         assert 'ngTap.require(toFail: pressGesture)' in tab and 'ngTap.require(toFail: panGesture)' in tab
@@ -102,7 +108,10 @@ def check():
         assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
         assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
         assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
-        assert 'glassView.alpha = 1 - share' in shrink and 'self.selectionView.alpha = share' in shrink
+        assert 'let capsuleShare = min(max(progress, 0), 1)' in shrink
+        assert 'self.selectionView.alpha = capsuleShare' in shrink and 'glassView.alpha = 1 - capsuleShare' in shrink
+        assert 'self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)' in shrink
+        assert 'progress - 0.72' not in shrink
         assert 'glassView.pauseRendering()' in shrink
         begin = section(tab, '    private func beginInteraction(', '    /// `time` is the touch')
         assert begin.index('showTheseus()') < begin.index('selectionAnimator?.rest(') < begin.index('followFinger(at:')

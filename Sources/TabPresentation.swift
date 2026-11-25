@@ -85,6 +85,16 @@ enum NGTabPresentation {
     static let appearanceDuration: TimeInterval = 0.15
     private static let gap: CGFloat = 4
 
+    static func pixelAligned(_ rect: CGRect, scale: CGFloat) -> CGRect {
+        guard scale.isFinite, scale > 0, rect.minX.isFinite, rect.minY.isFinite,
+              rect.width.isFinite, rect.height.isFinite, !rect.isNull else { return rect }
+        let minX = (rect.minX * scale).rounded() / scale
+        let minY = (rect.minY * scale).rounded() / scale
+        let maxX = (rect.maxX * scale).rounded() / scale
+        let maxY = (rect.maxY * scale).rounded() / scale
+        return CGRect(x: minX, y: minY, width: max(0, maxX - minX), height: max(0, maxY - minY))
+    }
+
     static func slotStrip(platter: CGRect) -> CGRect {
         guard platter.width > gap else { return platter }
         return platter.insetBy(dx: gap / 2, dy: 0)

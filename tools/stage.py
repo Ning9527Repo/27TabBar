@@ -274,6 +274,25 @@ def compensation(s):
 
 
 def tab_frame_policy(s):
+    s = replace(s, '    private func updateEdgeLayers() {\n        let rect = backgroundView.bounds\n        guard !rect.isEmpty else { return }\n        let margin: CGFloat = 1\n        let frame = rect.insetBy(dx: -margin, dy: -margin)\n        barEdgeShadeLayer.frame = frame\n        barEdgeGlowLayer.frame = frame', '''    private func updateEdgeLayers() {
+        let rect = backgroundView.bounds
+        guard !rect.isEmpty else { return }
+        let margin: CGFloat = 1
+        let rawFrame = rect.insetBy(dx: -margin, dy: -margin)
+        let frameScale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
+        let frame: CGRect
+        if ngUseHostPosition, window != nil {
+            let inWindow = backgroundView.convert(rawFrame, to: nil)
+            frame = backgroundView.convert(NGTabPresentation.pixelAligned(inWindow, scale: frameScale), from: nil)
+        } else {
+            frame = rawFrame
+        }
+        barEdgeShadeLayer.frame = frame
+        barEdgeGlowLayer.frame = frame''')
+    s = replace(s, '        let key = [rect.width, rect.height, isDarkAppearance ? 1 : 0] + (amplitude ?? [])', '''        let imageOffset = CGPoint(x: rect.minX - frame.minX, y: rect.minY - frame.minY)
+        let key = [rect.width, rect.height, frame.minX, frame.minY, frame.width, frame.height, scale, isDarkAppearance ? 1 : 0] + (amplitude ?? [])''')
+    s = replace(s, 'outline: rect.offsetBy(dx: margin, dy: margin)', 'outline: rect.offsetBy(dx: imageOffset.x, dy: imageOffset.y)')
+    s = replace(s, 'let body = rect.insetBy(dx: Self.bodyInset, dy: Self.bodyInset).offsetBy(dx: margin, dy: margin)', 'let body = rect.insetBy(dx: Self.bodyInset, dy: Self.bodyInset).offsetBy(dx: imageOffset.x, dy: imageOffset.y)')
     s = replace(s, '    var ngHostIsInteracting: Bool { isDragging || isCollapsingLens }', '''    var ngHostIsInteracting: Bool { isDragging || isCollapsingLens }
 
     private func ngInvalidatePageFrames(selectionDelay: TimeInterval = 0) {
@@ -295,7 +314,22 @@ def tab_frame_policy(s):
         ngInvalidatePageFrames(selectionDelay: TheseusSettings.shared.areMorphAnimationsEnabled ? 0.22 : 0)
         selectedIndex = index''')
     s = replace(s, '            if isCollapsingLens, confirmed != selectedIndex { endDragImmediately() }\n            selectedIndex = confirmed', '            ngApplySelection(confirmed)')
+    s = replace(s, '        let frame = selectionFrame(for: slotFrame(at: selectedIndex))', '''        let rawFrame = selectionFrame(for: slotFrame(at: selectedIndex))
+        let frame: CGRect
+        if ngUseHostPosition, window != nil {
+            let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
+            let screenFrame = contentView.convert(rawFrame, to: nil)
+            frame = contentView.convert(NGTabPresentation.pixelAligned(screenFrame, scale: scale), from: nil)
+        } else {
+            frame = rawFrame
+        }''')
     s = replace(s, '        if selectionView.shape.cornerRadius != frame.height / 2 {\n            selectionView.shape.cornerRadius = frame.height / 2', '''        let radius = ngUseHostPosition ? min(frame.width, frame.height) / 2 : frame.height / 2
+        if ngUseHostPosition {
+            selectionView.layer.cornerCurve = .continuous
+            selectionView.layer.masksToBounds = true
+            selectionView.isOpaque = true
+            selectionView.layer.isOpaque = true
+        }
         if selectionView.shape.cornerRadius != radius {
             selectionView.shape.cornerRadius = radius''')
     s = replace(s, '            pillShadeLayer.cornerRadius = size.height / 2',
@@ -583,10 +617,13 @@ def motion_policy(s):
         guard !releaseFrame.isEmpty, !animationBase.isEmpty else { endDragImmediately(); return }''')
     s = replace(s, '            glassView.layer.transform = LensMorph.transform(mapping: releaseFrame, onto: frame)', '''            glassView.layer.transform = LensMorph.transform(mapping: animationBase, onto: frame)
             if self.ngUseHostPosition {
-                // The settled pill only takes over once the lens is near the target.
-                let share = min(max((progress - 0.72) / 0.28, 0), 1)
-                self.selectionView.alpha = share
-                glassView.alpha = 1 - share
+                let pill = self.convertFromTheseusContainer(frame)
+                self.selectionView.bounds = CGRect(origin: .zero, size: pill.size)
+                self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)
+                self.selectionView.shape.cornerRadius = pill.height / 2
+                let capsuleShare = min(max(progress, 0), 1)
+                self.selectionView.alpha = capsuleShare
+                glassView.alpha = 1 - capsuleShare
             }''')
     s = replace(s, '            self.isCollapsingLens = false\n            self.selectionView.isHidden = false', '''            self.isCollapsingLens = false
             if self.ngUseHostPosition {
