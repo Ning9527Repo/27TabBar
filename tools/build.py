@@ -15,7 +15,7 @@ import tarfile
 from stage import ROOT, VENDOR, stage
 
 PKG = 'com.ning.theseussystemtabs'
-VERSION = '0.1.14'
+VERSION = '0.2'
 MIN_IOS = '16.0'
 NAME = 'TheseusSystemTabs'
 BUNDLE = NAME + 'Resources.bundle'
@@ -106,9 +106,9 @@ def make_deb(dylib, metal, arch):
     for notice in ('LICENSE', 'NOTICE'):
         payload[base+'/'+BUNDLE+'/'+notice] = ((VENDOR/notice).read_bytes(), 0o644)
     size = (sum(len(data) for data, _ in payload.values()) + 1023) // 1024
-    control = (f'Package: {PKG}\nName: 系统底栏玻璃\nVersion: {VERSION}\nArchitecture: {package_arch}\n'
+    control = (f'Package: {PKG}\nName: 27TabBar\nVersion: {VERSION}\nArchitecture: {package_arch}\n'
                f'Depends: firmware (>= {MIN_IOS}), mobilesubstrate\nSection: Tweaks\n'
-               f'Maintainer: Ning&valzevul\nAuthor: Ning&valzevul\nInstalled-Size: {size}\n'
+               f'Maintainer: Ning\nAuthor: Ning\nInstalled-Size: {size}\n'
                'Description: 为标准 UIKit 标签栏接入 Theseus 浮动玻璃与拖动透镜。\n').encode()
     return ar_pack([('debian-binary', b'2.0\n'), ('control.tar.gz', tar_gz({'control': (control, 0o644)})),
                     ('data.tar.gz', tar_gz(payload))]), payload

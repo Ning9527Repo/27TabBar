@@ -169,7 +169,9 @@ def check():
                 control = tar.extractfile('./control').read().decode()
                 assert f'Package: {PKG}\n' in control and f'Version: {VERSION}\n' in control
                 assert f'Architecture: iphoneos-{arch}\n' in control
-                assert 'Author: Ning&valzevul\n' in control
+                assert 'Name: 27TabBar\n' in control
+                assert 'Author: Ning\n' in control and 'Maintainer: Ning\n' in control
+                assert 'Ning&valzevul' not in control
             with tarfile.open(fileobj=io.BytesIO(members['data.tar.gz']), mode='r:gz') as tar:
                 verify_tar_layout(tar.getmembers(), expected)
                 files = {x.name[2:]:tar.extractfile(x).read() for x in tar if x.isfile()}
