@@ -1,17 +1,20 @@
 import Foundation
 import CoreGraphics
 
-// Only the selection shape changes: icon slots, platter and bar placement stay fixed.
+// Equal-width slots share one center for the icon, title and selection.
+// Outer platter geometry stays fixed. Its ends receive the same 4 pt gap
+// as the gap between adjacent capsule positions.
 enum NGTabPresentation {
-    static func capsule(slot: CGRect, platter: CGRect, itemInset: CGFloat) -> CGRect {
-        guard !slot.isEmpty, !platter.isEmpty else { return slot }
-        let gap: CGFloat = 4
-        let first = abs(slot.minX - (platter.minX + itemInset)) < 1
-        let last = abs(slot.maxX - (platter.maxX - itemInset)) < 1
-        let left = first ? platter.minX + gap : slot.minX + gap / 2
-        let right = last ? platter.maxX - gap : slot.maxX - gap / 2
-        return CGRect(x: left, y: platter.minY + gap,
-                      width: max(0, right - left), height: max(0, platter.height - 2 * gap))
+    private static let gap: CGFloat = 4
+
+    static func slotStrip(platter: CGRect) -> CGRect {
+        guard platter.width > gap else { return platter }
+        return platter.insetBy(dx: gap / 2, dy: 0)
+    }
+
+    static func capsule(slot: CGRect) -> CGRect {
+        guard slot.width > gap, slot.height > 2 * gap else { return slot }
+        return slot.insetBy(dx: gap / 2, dy: gap)
     }
 
     static func title(_ candidates: String?...) -> String? {

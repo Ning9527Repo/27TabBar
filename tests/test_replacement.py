@@ -108,26 +108,26 @@ for ios26 in [false,true] {
   for width in stride(from:260.0,through:1024.0,by:4) {
     let platter = CGRect(x: ios26 ? 0 : 1.0/3, y: ios26 ? 0.5 : -1.0/6,
                          width: CGFloat(width-28) - (ios26 ? 0 : 2.0/3), height: ios26 ? 62 : 63+1.0/3)
-    geometry.backgroundView.frame = platter
-    let inset = geometry.barContentInset
-    let slot = (CGFloat(width-28) - 2 * inset) / CGFloat(n)
+    let strip = NGTabPresentation.slotStrip(platter: platter)
+    let slot = strip.width / CGFloat(n)
     for rtl in [false,true] {
       var frames: [CGRect] = []
       for logical in 0..<n {
         let physical = rtl ? n-1-logical : logical
-        let frame = CGRect(x: inset+CGFloat(physical)*slot,y:0,width:slot,height:63)
+        let frame = CGRect(x: strip.minX+CGFloat(physical)*slot,y:strip.minY,width:slot,height:strip.height)
         let pill = geometry.selectionFrame(for:frame); let lens = geometry.glassFrame(for:frame)
         precondition(abs(pill.minY-platter.minY-4)<0.001 && abs(platter.maxY-pill.maxY-4)<0.001)
-        precondition(platter.contains(pill) && pill.minX < frame.midX && frame.midX < pill.maxX)
+        precondition(platter.contains(pill) && abs(pill.width-slot+4)<0.001)
+        precondition(abs(pill.midX-frame.midX)<0.001 && abs(pill.midY-frame.midY)<0.001)
         if physical == 0 { precondition(abs(pill.minX-platter.minX-4)<0.001) }
         if physical == n-1 { precondition(abs(platter.maxX-pill.maxX-4)<0.001) }
-        precondition(lens.width >= (ios26 ? 90 : 96) && lens.height == 70 && abs(lens.midX-frame.midX)<0.001)
+        precondition(abs(lens.width-pill.width-16)<0.001 && lens.height == 70 && abs(lens.midX-pill.midX)<0.001)
         frames.append(pill)
         cases += 1
       }
       let ordered = frames.sorted { $0.minX < $1.minX }
       for (lhs,rhs) in zip(ordered,ordered.dropFirst()) {
-        precondition(abs(rhs.minX-lhs.maxX-4)<0.001)
+        precondition(abs(rhs.minX-lhs.maxX-4)<0.001 && abs(rhs.width-lhs.width)<0.001)
       }
     }
   }

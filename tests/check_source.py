@@ -47,21 +47,35 @@ def check():
         else:
             raise AssertionError('Missing upstream anchors accepted')
         changed = {p.name for p in a.glob('*.swift') if p.read_bytes() != next((ROOT/'Vendor/Theseus/Sources').rglob(p.name)).read_bytes()}
-        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift','BackgroundCaptureDraw.swift','ViewLayerCapture.swift','VisualEffectFallback.swift'}
+        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift','BackgroundCaptureDraw.swift','ViewLayerCapture.swift'}
         tab = (a/'TheseusTabBar.swift').read_text()
         renderer = (a/'TheseusRenderer.swift').read_text()
         surface = (a/'TheseusView.swift').read_text()
-        assert 'ngInvalidatePageFrames(after: 0.24)\n        selectedIndex = index' in tab
-        assert 'if confirmed != selectedIndex { ngInvalidatePageFrames(after: 0.15) }' in tab
-        assert 'ngUseHostPosition ? 0.06 : Self.pillDetail' in tab
-        assert 'if ngUseHostPosition { return isDarkAppearance ? 0.08 : 0.10 }' in tab
-        assert tab.count('config.blur.radius = 18') == 2
-        assert 'selectionAnimator?.onFrameChanged?(frame)' in tab
-        assert 'continuousUpdate && !ngInteractiveLens' in renderer
-        assert 'framesInFlight < (ngInteractiveLens ? 1 : Self.maxFramesInFlight)' in renderer
-        assert '1.0 / 30.0 - 0.001' in renderer and 'ngLastCapture = now' in renderer
+        upstream_tab = next((ROOT/'Vendor/Theseus/Sources').rglob('TheseusTabBar.swift')).read_text()
+        assert 'ngInvalidatePageFrames()\n        selectedIndex = index' in tab
+        assert 'if confirmed != selectedIndex { ngInvalidatePageFrames() }' in tab
+        assert 'NGTabPresentation.slotStrip(platter: backgroundView.frame)' in tab
+        assert 'NGTabPresentation.capsule(slot: itemFrame)' in tab
+        for marker, end in [('    private let backgroundGlassView:', '    /// Native iOS 27 pill'),
+                            ('    private func followFinger(', '    private func finishInteraction('),
+                            ('    private func applyBarBodyGain(', '    private func startFlexSpread('),
+                            ('private final class SelectionAnimator', 'private final class LensMorphAnimator')]:
+            def section(text):
+                start = text.index(marker)
+                return text[start:text.index(end, start)]
+            assert section(tab) == section(upstream_tab), marker
+        assert 'pressGesture.minimumPressDuration = 0' in tab
+        assert 'pressGesture.allowableMovement = .greatestFiniteMagnitude' in tab
+        assert 'ngTap' not in tab and 'ngInteractiveLens' not in renderer
+        assert 'metalLayer?.presentsWithTransaction = continuousUpdate' in renderer
+        assert 'let renderScale = currentRefractionQuality.renderScale' in renderer
         assert 'let onSnapshot = self.onSnapshot' in renderer
-        assert surface.count('self.ngBackdropEpoch == epoch') == 2
+        assert surface.count('self.ngBackdropEpoch == epoch') == 3
+        assert 'ngOpaqueBackdrop && !isUsingFallback' in surface
+        assert 'let fill = renderedCenterColor ?? cover.backgroundColor' in surface
+        assert 'insertSubview(cover, aboveSubview: metal)' in surface
+        assert 'cover.layer.removeAllAnimations()' in surface
+        assert 'UIView.animate(withDuration: 0.08' in surface
         assert 'captureSnapshot = nil\n        captureSnapshotOverride = nil' in surface
         assert 'metalLayerView?.alpha = 0' in surface and 'metalLayerView?.alpha = 1' in surface
         # Exercise real ar/tar writer with explicit fixture bytes for both path variants.

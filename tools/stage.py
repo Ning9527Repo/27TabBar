@@ -24,23 +24,13 @@ def replace(text, old, new, count=1):
 
 def tabbar(s):
     s = replace(s, '    public var selectedIndex: Int = 0 {', '''    weak var ngExcludedBar: UIView?
-    private weak var ngPress: UILongPressGestureRecognizer?
-    private weak var ngPan: UIPanGestureRecognizer?
-    private lazy var ngTap = UITapGestureRecognizer(target: self, action: #selector(ngHandleTap(_:)))
     var ngActivateNative: ((Int) -> Int?)?
     var ngUseHostPosition = false {
         didSet {
-            ngTap.isEnabled = ngUseHostPosition
-            ngPress?.minimumPressDuration = ngUseHostPosition ? 0.15 : 0
-            ngPress?.allowableMovement = ngUseHostPosition ? 10 : .greatestFiniteMagnitude
             backgroundGlassView.ngOpaqueBackdrop = ngUseHostPosition
             selectionView.ngOpaqueBackdrop = ngUseHostPosition
+            selectionView.ngSelectionBackdrop = ngUseHostPosition
         }
-    }
-
-    @objc private func ngHandleTap(_ gesture: UITapGestureRecognizer) {
-        guard gesture.state == .ended, !slotFrames.isEmpty else { return }
-        selectItem(at: findClosestItemIndex(to: gesture.location(in: contentView)))
     }
 
     var ngHostFrame = CGRect.zero
@@ -92,24 +82,16 @@ def tabbar(s):
 ''')
     s = replace(s, '            rebuildItemViews()\n            setNeedsLayout()', '            guard !ngRefreshingItems else { return }\n            rebuildItemViews()\n            setNeedsLayout()')
     s = replace(s, '        let contentWidth = min(bounds.width,', '        if ngUseHostPosition { return bounds }\n        let contentWidth = min(bounds.width,')
-    s = replace(s, '        let size = pillSize\n', '''        if ngUseHostPosition {
-            return NGTabPresentation.capsule(slot: itemFrame, platter: backgroundView.frame,
-                                             itemInset: barContentInset)
-        }
+    s = replace(s, '        let barFrame = contentBarFrame.insetBy(dx: barContentInset, dy: 0)',
+                '        let barFrame = ngUseHostPosition ? NGTabPresentation.slotStrip(platter: backgroundView.frame) : contentBarFrame.insetBy(dx: barContentInset, dy: 0)')
+    s = replace(s, '        let size = pillSize\n', '''        if ngUseHostPosition { return NGTabPresentation.capsule(slot: itemFrame) }
         let size = pillSize
 ''')
-    s = replace(s, '        let size = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize\n', '''        let base = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize
-        let size = CGSize(width: ngUseHostPosition ? max(base.width, max(pillSize.width, itemFrame.width - 4) + 16) : base.width,
-                          height: base.height)
-''')
-    s = replace(s, '        pressGesture.minimumPressDuration = 0', '        pressGesture.minimumPressDuration = 0\n        ngPress = pressGesture')
-    s = replace(s, '        addGestureRecognizer(panGesture)', '''        addGestureRecognizer(panGesture)
-        ngPan = panGesture
-        ngTap.isEnabled = ngUseHostPosition
-        ngTap.delegate = self
-        ngTap.require(toFail: pressGesture)
-        ngTap.require(toFail: panGesture)
-        addGestureRecognizer(ngTap)
+    s = replace(s, '        let size = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize\n', '''        let original = usesIOS26Look ? Self.iOS26LensSize : Self.lensSize
+        // Retain the original press expansion on wider system tab slots.
+        let size = ngUseHostPosition
+            ? CGSize(width: selectionFrame(for: itemFrame).width + original.width - pillSize.width, height: original.height)
+            : original
 ''')
     s = replace(s, '            UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: 0.75) {', '''            let options: UIView.AnimationOptions = ngUseHostPosition ? [.beginFromCurrentState, .allowUserInteraction] : []
             UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.88,
@@ -125,13 +107,6 @@ def tabbar(s):
         }
 ''')
     s = replace(s, '        guard index != selectedIndex else { return }\n        selectedIndex = index', '        guard items.indices.contains(index), items[index].ngEnabled, index != selectedIndex else { return }\n        selectedIndex = index')
-    s = replace(s, '        guard let pan = gestureRecognizer as? UIPanGestureRecognizer,', '''        if ngUseHostPosition, gestureRecognizer === ngTap { return !slotFrames.isEmpty && !isDragging }
-        if ngUseHostPosition, let pan = gestureRecognizer as? UIPanGestureRecognizer, pan === ngPan {
-            let velocity = pan.velocity(in: self)
-            return !slotFrames.isEmpty && abs(velocity.x) > abs(velocity.y)
-        }
-        guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
-'''.rstrip('\n'))
     s = replace(s, '        super.layoutSubviews()\n\n        contentView.bounds = bounds', '''        super.layoutSubviews()
 
         let exclusions = [self, ngExcludedBar].compactMap { $0 }
@@ -141,7 +116,7 @@ def tabbar(s):
         contentView.bounds = bounds''')
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
-            return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: 0, width: itemWidth, height: itemHeight)''')
+            return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: ngUseHostPosition ? barFrame.minY : 0, width: itemWidth, height: itemHeight)''')
     s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? self : theseusSourceView?.superview\n')
     s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }\n        glassView.isHidden')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
@@ -171,19 +146,6 @@ def tabbar(s):
                 onItemSelected?(landingIndex)
             }
         }''')
-    s = replace(s, '            currentDragVelocity = gesture.velocity(in: self)\n', '''            currentDragVelocity = gesture.velocity(in: self)
-            if ngUseHostPosition { followFinger(at: gesture.location(in: self)) }
-''')
-    s = replace(s, '        gestureRecognizer.view === self && otherGestureRecognizer.view === self',
-                '        !ngUseHostPosition && gestureRecognizer.view === self && otherGestureRecognizer.view === self')
-    s = replace(s, '        glassView.layer.transform = CATransform3DIdentity\n        let releaseFrame = glassView.frame.insetBy(dx: glassView.shape.widthInset, dy: glassView.shape.heightInset)', '''        let displayedFrame = glassView.layer.frame
-        let scaleX = displayedFrame.width / max(glassView.bounds.width, 1)
-        let scaleY = displayedFrame.height / max(glassView.bounds.height, 1)
-        let releaseFrame = displayedFrame.insetBy(dx: glassView.shape.widthInset * scaleX,
-                                                  dy: glassView.shape.heightInset * scaleY)
-        glassView.layer.transform = CATransform3DIdentity''')
-    s = replace(s, '        if glassView.shape.widthInset != 0 || glassView.shape.heightInset != 0 {\n            glassView.frame = releaseFrame',
-                '        if glassView.frame != releaseFrame || glassView.shape.widthInset != 0 || glassView.shape.heightInset != 0 {\n            glassView.frame = releaseFrame')
     s = replace(s, '            if landingIndex < self.slotFrames.count {\n                animator?.retarget(to: self.convertToTheseusContainer(self.selectionFrame(for: self.slotFrame(at: landingIndex))))', '''            let target = self.ngUseHostPosition ? self.selectedIndex : landingIndex
             if self.slotFrames.indices.contains(target) {
                 animator?.retarget(to: self.convertToTheseusContainer(self.selectionFrame(for: self.slotFrame(at: target))))''')
@@ -307,107 +269,40 @@ def compensation(s):
 
 
 def tab_frame_policy(s):
-    s = replace(s, '            backgroundGlassView.ngOpaqueBackdrop = ngUseHostPosition\n            selectionView.ngOpaqueBackdrop = ngUseHostPosition', '''            backgroundGlassView.ngOpaqueBackdrop = ngUseHostPosition
-            selectionView.ngOpaqueBackdrop = ngUseHostPosition
-            backgroundGlassView.refraction.interiorSharpness = ngChromeDetail
-            selectionView.refraction.interiorSharpness = ngUseHostPosition ? 0.06 : Self.pillDetail''')
     s = replace(s, '    var ngHostIsInteracting: Bool { isDragging || isCollapsingLens }', '''    var ngHostIsInteracting: Bool { isDragging || isCollapsingLens }
-    private var ngFollowStart: CGFloat?
-    private var ngFingerFrame: CGRect?
 
-    private var ngChromeDetail: CGFloat {
-        if ngUseHostPosition { return isDarkAppearance ? 0.08 : 0.10 }
-        return isDarkAppearance ? Self.chromeDetailDark : Self.chromeDetailLight
-    }
-
-    private func ngInvalidatePageFrames(after delay: TimeInterval) {
-        backgroundGlassView.ngInvalidateBackdrop(after: delay)
-        selectionView.ngInvalidateBackdrop(after: delay)
+    private func ngInvalidatePageFrames() {
+        backgroundGlassView.ngInvalidateBackdrop(after: 0)
+        selectionView.ngInvalidateBackdrop(after: 0)
         if let lens = theseusView, !lens.isHidden {
-            lens.ngInvalidateBackdrop(after: 0.04)
+            // Keep the original growing/shrinking lens; refresh its input on release.
+            lens.invalidateBackground()
         }
     }''')
     s = replace(s, '        if isCollapsingLens { endDragImmediately() }\n        selectedIndex = index', '''        if isCollapsingLens { endDragImmediately() }
-        ngInvalidatePageFrames(after: 0.24)
+        ngInvalidatePageFrames()
         selectedIndex = index''')
     s = replace(s, '            if isCollapsingLens, confirmed != selectedIndex { endDragImmediately() }\n            selectedIndex = confirmed', '            ngApplySelection(confirmed)')
-    s = replace(s, '                    isCommittingDrag = true\n                    selectedIndex = confirmed', '''                    if confirmed != selectedIndex { ngInvalidatePageFrames(after: 0.15) }
+    s = replace(s, '        if selectionView.shape.cornerRadius != frame.height / 2 {\n            selectionView.shape.cornerRadius = frame.height / 2', '''        let radius = ngUseHostPosition ? min(frame.width, frame.height) / 2 : frame.height / 2
+        if selectionView.shape.cornerRadius != radius {
+            selectionView.shape.cornerRadius = radius''')
+    s = replace(s, '            pillShadeLayer.cornerRadius = size.height / 2',
+                '            pillShadeLayer.cornerRadius = (ngUseHostPosition ? min(size.width, size.height) : size.height) / 2')
+    s = replace(s, '        selectionView.shape.cornerRadius = pillLocal.height / 2',
+                '        selectionView.shape.cornerRadius = (ngUseHostPosition ? min(pillLocal.width, pillLocal.height) : pillLocal.height) / 2')
+    return replace(s, '                    isCommittingDrag = true\n                    selectedIndex = confirmed', '''                    if confirmed != selectedIndex { ngInvalidatePageFrames() }
                     isCommittingDrag = true
                     selectedIndex = confirmed''')
-    s = replace(s, 'backgroundGlassView.configuration.refraction.interiorSharpness = isDark ? Self.chromeDetailDark : Self.chromeDetailLight',
-                'backgroundGlassView.configuration.refraction.interiorSharpness = ngChromeDetail')
-    s = replace(s, '        glassView.sourceView = sourceView\n        if let bar = ngExcludedBar', '''        glassView.sourceView = sourceView
-        glassView.ngInteractiveLens = ngUseHostPosition
-        if let bar = ngExcludedBar''')
-    s = replace(s, '        if let sourceView = theseusSourceView, sourceView.bounds.width > 0 {',
-                '        if let sourceView = theseusSourceView, sourceView.bounds.width > 0, glassView.sourceView !== sourceView {')
-    s = replace(s, '        var lastFrame = startFrame', '''        var lastFrame = startFrame
-        if ngUseHostPosition { glassView.ngInvalidateBackdrop(after: 0) }''')
-    s = replace(s, '            lastFrame = frame\n            glassView.layer.transform = self.stretched', '''            var frame = frame
-            if let finger = self.ngFingerFrame {
-                let target = self.convertToTheseusContainer(finger)
-                frame = frame.offsetBy(dx: target.midX - frame.midX, dy: target.midY - frame.midY)
-            }
-            lastFrame = frame
-            glassView.layer.transform = self.stretched''')
-    s = replace(s, '        showTheseus()\n        startLensActivity()', '''        ngFollowStart = nil
-        ngFingerFrame = nil
-        showTheseus()
-        startLensActivity()''')
-    s = replace(s, '        selectionAnimator?.follow(x: location.x + fingerAnchorOffset, at: time)', '''        if ngUseHostPosition {
-            guard isDragging, let frame = calculateInterpolatedFrame(for: CGPoint(x: location.x + fingerAnchorOffset, y: 0)) else { return }
-            if ngFollowStart == nil {
-                ngFollowStart = location.x
-                lensMorphAnimator?.retarget(to: convertToTheseusContainer(frame))
-            } else if ngFingerFrame != nil || abs(location.x - (ngFollowStart ?? location.x)) >= 1 {
-                ngFingerFrame = frame
-                // The grow animation owns size; the finger owns the center independently.
-                if lensMorphAnimator?.isRunning == true, let lens = theseusView {
-                    var transform = lens.layer.transform
-                    let target = convertToTheseusContainer(frame)
-                    transform.m41 += target.midX - lens.layer.frame.midX
-                    transform.m42 += target.midY - lens.layer.frame.midY
-                    lens.layer.transform = transform
-                }
-                selectionAnimator?.onFrameChanged?(frame)
-            }
-        } else {
-            selectionAnimator?.follow(x: location.x + fingerAnchorOffset, at: time)
-        }''')
-    s = replace(s, '        isDragging = false\n        hoveredIndex = -1\n        currentDragVelocity = .zero\n        flexSpreadDriver.stop()',
-                '        isDragging = false\n        ngFingerFrame = nil\n        hoveredIndex = -1\n        currentDragVelocity = .zero\n        flexSpreadDriver.stop()')
-    s = replace(s, '        if changed {\n            backgroundGlassView.invalidateBackground()\n        }',
-                '        if changed && !(ngUseHostPosition && isDragging) {\n            backgroundGlassView.invalidateBackground()\n        }')
-    return s
 
 
 def renderer_frame_policy(s):
-    s = replace(s, '    var continuousUpdate: Bool = false {', '''    var ngInteractiveLens = false
-    var ngCaptureNotBefore: CFTimeInterval = 0
-    private var ngLastCapture: CFTimeInterval = -.infinity
+    # Preserve the upstream frame rate, resolution and render scheduling. Only the
+    # adapter's static surfaces defer capture to the next run-loop opportunity.
+    s = replace(s, '    var continuousUpdate: Bool = false {', '''    var ngCaptureNotBefore: CFTimeInterval = 0
 
     var continuousUpdate: Bool = false {''')
-    s = replace(s, 'metalLayer?.presentsWithTransaction = continuousUpdate',
-                'metalLayer?.presentsWithTransaction = continuousUpdate && !ngInteractiveLens')
-    s = replace(s, '        guard shouldRender() else { return }', '''        guard shouldRender() else { return }
-        let now = CACurrentMediaTime()
-        guard now >= ngCaptureNotBefore,
-              !ngInteractiveLens || now - ngLastCapture >= 1.0 / 30.0 - 0.001 else { return }''')
-    s = replace(s, '        frameCounter += 1', '        ngLastCapture = now\n        frameCounter += 1')
-    s = replace(s, '        let renderScale = currentRefractionQuality.renderScale',
-                '        let renderScale = ngInteractiveLens ? min(currentRefractionQuality.renderScale, 0.5) : currentRefractionQuality.renderScale')
-    s = replace(s, 'guard framesInFlight < Self.maxFramesInFlight else { return }',
-                'guard framesInFlight < (ngInteractiveLens ? 1 : Self.maxFramesInFlight) else { return }')
-    s = replace(s, '        isRendering = true\n        markAllFramesCompleted()',
-                '        isRendering = true\n        if !ngInteractiveLens { markAllFramesCompleted() }')
-    s = replace(s, '        waitForGPUCompletion()\n        markAllFramesCompleted()', '''        // A lens can be reopened while its prior frame drains. Keep that frame
-        // counted so the next session cannot reuse textures still on the GPU.
-        if !ngInteractiveLens {
-            waitForGPUCompletion()
-            markAllFramesCompleted()
-        }''')
-    s = replace(s, 'set { frameCounterLock.withLock { _lastCompletedFrame = newValue } }',
-                'set { frameCounterLock.withLock { _lastCompletedFrame = max(_lastCompletedFrame, newValue) } }')
+    s = replace(s, '        guard shouldRender() else { return }',
+                '        guard CACurrentMediaTime() >= ngCaptureNotBefore, shouldRender() else { return }')
     return replace(s, '        commandBuffer.addCompletedHandler { [weak self] _ in\n            guard let image = Self.image(from: snapshot) else { return }\n            DispatchQueue.main.async { self?.onSnapshot?(image) }', '''        let onSnapshot = self.onSnapshot
         commandBuffer.addCompletedHandler { buffer in
             guard buffer.status == .completed, let image = Self.image(from: snapshot) else { return }
@@ -418,25 +313,58 @@ def surface_frame_policy(s):
     s = replace(s, '    private var ngPresented = false', '''    private var ngPresented = false
     private var ngBackdropEpoch: UInt64 = 0
     private var ngCaptureNotBefore: CFTimeInterval = 0
-    var ngInteractiveLens = false
+    var ngSelectionBackdrop = false
+    private var ngSwitchCover: UIView?
+
+    // An opaque, detail-free fill sampled from the last settled surface, not
+    // the old page image. Keep it below the existing rim and pill shading.
+    private func ngShowSwitchCover(over metal: UIView) {
+        let dark = traitCollection.userInterfaceStyle == .dark
+        let neutral: CGFloat = ngSelectionBackdrop ? (dark ? 0.26 : 0.88) : (dark ? 0.18 : 0.96)
+        let cover = ngSwitchCover ?? UIView(frame: bounds)
+        if ngSwitchCover == nil {
+            cover.isUserInteractionEnabled = false
+            cover.isAccessibilityElement = false
+            cover.clipsToBounds = true
+            insertSubview(cover, aboveSubview: metal)
+            ngSwitchCover = cover
+        }
+        let fill = renderedCenterColor ?? cover.backgroundColor ?? UIColor(white: neutral, alpha: 1)
+        UIView.performWithoutAnimation {
+            cover.layer.removeAllAnimations()
+            cover.frame = bounds
+            cover.layer.cornerRadius = shape.cornerRadius
+            cover.backgroundColor = fill
+            cover.isHidden = false
+            cover.alpha = 1
+            fallbackView?.isHidden = true
+            metal.alpha = 0
+        }
+    }
 
     func ngInvalidateBackdrop(after delay: TimeInterval) {
         ngBackdropEpoch &+= 1
+        let metal = metalLayerView
+        let useSwitchCover = ngOpaqueBackdrop && !isUsingFallback && renderer != nil && metal != nil
+        if useSwitchCover, let metal { ngShowSwitchCover(over: metal) }
         ngCaptureNotBefore = CACurrentMediaTime() + delay
         ngPresented = false
         captureSnapshot = nil
         captureSnapshotOverride = nil
-        ngPrepareReplacement()
+        if useSwitchCover {
+            ngWaitingForPresent = true
+            ngConfigurePresentCallback()
+        } else {
+            ngSwitchCover?.isHidden = true
+            ngPrepareReplacement()
+        }
         renderer?.ngCaptureNotBefore = ngCaptureNotBefore
         applySnapshotSetting()
         renderer?.setNeedsRender()
     }''')
     s = replace(s, '        fallbackView?.isHidden = false\n        ngConfigurePresentCallback()', '''        fallbackView?.isHidden = false
         // Keep acquiring drawables while masking the stale texture on screen.
-        if ngOpaqueBackdrop || ngInteractiveLens {
-            metalLayerView?.alpha = 0
-            fallbackView?.ngSetBackdropBlur()
-        }
+        if ngOpaqueBackdrop { metalLayerView?.alpha = 0 }
         ngConfigurePresentCallback()''')
     s = replace(s, '            renderer?.onPresent = { [weak self] in self?.ngFramePresented() }', '''            let epoch = ngBackdropEpoch
             renderer?.onPresent = { [weak self] in
@@ -448,27 +376,36 @@ def surface_frame_policy(s):
                 metalLayerView?.alpha = 1
                 fallbackView?.isHidden = true
             }
+            if let cover = ngSwitchCover, !cover.isHidden, cover.alpha > 0 {
+                let epoch = ngBackdropEpoch
+                UIView.animate(withDuration: 0.08, delay: 0, options: [.allowUserInteraction, .curveEaseOut]) {
+                    cover.alpha = 0
+                } completion: { [weak self, weak cover] finished in
+                    guard finished, let self, self.ngBackdropEpoch == epoch else { return }
+                    cover?.isHidden = true
+                }
+            }
         }''')
+    s = replace(s, '        fallbackView?.frame = bounds\n\n        guard let metalLayer', '''        fallbackView?.frame = bounds
+        if let cover = ngSwitchCover {
+            cover.frame = bounds
+            cover.layer.cornerRadius = shape.cornerRadius
+        }
+
+        guard let metalLayer''')
+    s = replace(s, '            renderer = nil\n            metalLayerView?.isHidden = true', '''            renderer = nil
+            ngSwitchCover?.layer.removeAllAnimations()
+            ngSwitchCover?.isHidden = true
+            metalLayerView?.isHidden = true''')
     s = replace(s, '        renderer?.onSnapshot = providesCaptureSnapshot ? { [weak self] image in\n            self?.captureSnapshot = image\n            self?.snapshotDidUpdate?()', '''        let epoch = ngBackdropEpoch
         renderer?.onSnapshot = providesCaptureSnapshot ? { [weak self] image in
             guard let self, self.ngBackdropEpoch == epoch else { return }
             self.captureSnapshot = image
             self.snapshotDidUpdate?()''')
     s = replace(s, '        renderer?.hostView = self\n        renderer?.configuration', '''        renderer?.hostView = self
-        renderer?.ngInteractiveLens = ngInteractiveLens
         renderer?.ngCaptureNotBefore = ngCaptureNotBefore
         renderer?.configuration''')
-    s = replace(s, '            fallbackView?.configure(with: configuration)\n            fallbackView?.updateForTraitCollection(traitCollection)', '''            fallbackView?.configure(with: configuration)
-            if ngOpaqueBackdrop || ngInteractiveLens { fallbackView?.ngSetBackdropBlur() }
-            fallbackView?.updateForTraitCollection(traitCollection)''')
     return s
-
-
-def fallback_frame_policy(s):
-    s = replace(s, '    private var lastConfiguration: TheseusConfiguration?', '''    func ngSetBackdropBlur() { blurView.alpha = 1 }
-
-    private var lastConfiguration: TheseusConfiguration?''')
-    return replace(s, '        cornerRadius = config.shape.cornerRadius', '        cornerRadius = abs(config.shape.cornerRadius)')
 
 
 def stage(dst):
@@ -476,7 +413,7 @@ def stage(dst):
     patches = {'TheseusTabBar.swift':lambda s: tab_frame_policy(tabbar(s)),
                'TheseusRenderer.swift':lambda s: renderer_frame_policy(renderer(s)),
                'TheseusView.swift':lambda s: surface_frame_policy(surface(s)),
-               'VisualEffectFallback.swift':fallback_frame_policy,'CaptureCompensation.swift':compensation,
+               'CaptureCompensation.swift':compensation,
                'BackgroundCaptureDraw.swift':lambda s: opaque_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
                'ViewLayerCapture.swift':lambda s: opaque_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
     dst.mkdir(parents=True,exist_ok=True)
