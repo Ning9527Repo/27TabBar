@@ -77,8 +77,34 @@ def capture(s, rect, rep):
     s = rep(s, '        let compensation = CaptureCompensation.begin(in: sourceView, region: limitCompensation ? region : nil)',
             '        let compensation = solidBackdrop == nil\n            ? CaptureCompensation.begin(in: sourceView, region: limitCompensation ? region : nil) : []')
     s = rep(s, '        if opaqueBackdrop {\n', '''        if let solidBackdrop {
-            ctx.setFillColor(solidBackdrop)
-            ctx.fill(''' + rect + ''')
+            let components = solidBackdrop.components ?? [0.88, 0.88, 0.88, 1]
+            let baseRed = components.count >= 4 ? components[0] : components[0]
+            let baseGreen = components.count >= 4 ? components[1] : components[0]
+            let baseBlue = components.count >= 4 ? components[2] : components[0]
+            func neutralGlassColor(_ factor: CGFloat, _ bias: CGFloat) -> CGColor {
+                func clamp(_ value: CGFloat) -> CGFloat { min(max(value, 0), 1) }
+                return CGColor(red: clamp(baseRed * factor + bias),
+                               green: clamp(baseGreen * factor + bias),
+                               blue: clamp(baseBlue * factor + bias), alpha: 1)
+            }
+            let colors: [CGColor] = [
+                neutralGlassColor(0.82, 0),
+                neutralGlassColor(1.04, 0.015),
+                neutralGlassColor(0.90, 0),
+                neutralGlassColor(1.08, 0.01)
+            ]
+            let locations: [CGFloat] = [0, 0.30, 0.68, 1]
+            let backdropRect = ''' + rect + '''
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                          colors: colors as CFArray, locations: locations) {
+                ctx.saveGState()
+                ctx.clip(to: backdropRect)
+                ctx.drawLinearGradient(gradient,
+                                       start: CGPoint(x: backdropRect.midX, y: backdropRect.minY),
+                                       end: CGPoint(x: backdropRect.midX, y: backdropRect.maxY),
+                                       options: [])
+                ctx.restoreGState()
+            }
         } else if opaqueBackdrop {
 ''')
     return rep(s, '        sourceView.layer.render(in: ctx)\n', '        if solidBackdrop == nil { sourceView.layer.render(in: ctx) }\n')

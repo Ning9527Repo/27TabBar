@@ -20,7 +20,7 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.5'
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.6'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -119,7 +119,8 @@ def check():
         assert 'if ngUseHostPosition {\n            glassView.ngCapsuleBackdrop = selectionView.renderedCenterColor' in setup
         for name in ('BackgroundCaptureDraw.swift', 'ViewLayerCapture.swift'):
             capture = (a/name).read_text()
-            assert 'if let solidBackdrop {' in capture and 'ctx.setFillColor(solidBackdrop)' in capture
+            assert 'if let solidBackdrop {' in capture
+            assert 'let colors: [CGColor]' in capture and 'drawLinearGradient' in capture
             assert 'if solidBackdrop == nil { sourceView.layer.render(in: ctx) }' in capture
         assert renderer.count('solidBackdrop: (hostView as? TheseusView)?.ngCapsuleBackdrop?.cgColor') == 2
         fallback = (a/'VisualEffectFallback.swift').read_text()
