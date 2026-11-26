@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 
+import capsule_policy
 import hosted_appearance
 import hosted_compositor
 import hosted_motion
@@ -123,8 +124,8 @@ def tabbar(s):
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
             return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: ngUseHostPosition ? barFrame.minY : 0, width: itemWidth, height: itemHeight)''')
-    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? self : theseusSourceView?.superview\n')
-    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        glassView.ngNonblockingRendering = ngUseHostPosition\n        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }\n        glassView.isHidden')
+    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? contentView : theseusSourceView?.superview\n')
+    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        glassView.ngNonblockingRendering = ngUseHostPosition\n        glassView.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })\n        glassView.isHidden')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)
         case .cancelled, .failed:
@@ -790,28 +791,29 @@ def stage(dst):
         s = opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s))))
         s = stability.appearance_tab(stability.drag_tab(s, replace), replace)
         s = hosted_appearance.tab(hosted_motion.tab(s, replace), replace)
-        s = hosted_compositor.tab(s, replace)
+        s = capsule_policy.tab(hosted_compositor.tab(s, replace), replace)
         return platter_edges.tab(s, replace)
 
     def adapted_renderer(s):
         s = nonblocking_lens_renderer(renderer_frame_policy(renderer(s)))
         s = stability.appearance_renderer(stability.drag_renderer(s, replace), replace)
         s = hosted_appearance.renderer(hosted_motion.renderer(s, replace), replace)
-        return s
+        return capsule_policy.renderer(s, replace)
 
     def adapted_surface(s):
         s = opaque_selection_surface(motion_surface(surface_frame_policy(surface(s))))
         s = stability.appearance_surface(s, replace)
         s = hosted_appearance.surface(hosted_motion.surface(s, replace), replace)
-        return s
+        return capsule_policy.surface(s, replace)
 
     def adapted_capture(s, rect):
-        return stability.bounded_capture(opaque_capture(s, rect), replace)
+        s = stability.bounded_capture(opaque_capture(s, rect), replace)
+        return capsule_policy.capture(s, rect, replace)
 
     patches = {'TheseusTabBar.swift':adapted_tab,
                'TheseusRenderer.swift':adapted_renderer,
                'TheseusView.swift':adapted_surface,
-               'VisualEffectFallback.swift':frosted_platter_fallback,
+               'VisualEffectFallback.swift':lambda s: capsule_policy.fallback(frosted_platter_fallback(s), replace),
                'CaptureCompensation.swift':lambda s: stability.bounded_compensation(compensation(s), replace),
                'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
                'ViewLayerCapture.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}

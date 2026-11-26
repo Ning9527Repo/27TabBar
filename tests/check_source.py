@@ -20,7 +20,7 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.4'
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.5'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -97,43 +97,38 @@ def check():
         setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
         grow = section(tab, '    private func showTheseus()', '    private func hideTheseus()')
         shrink = section(tab, '    private func hideTheseus()', '    /// Places the lens without resizing')
-        assert 'ngUseHostPosition ? self : theseusSourceView?.superview' in tab
+        assert 'ngUseHostPosition ? contentView : theseusSourceView?.superview' in tab
         assert 'window?.rootViewController?.view' in tab
         assert 'let sourceView = theseusSourceView' in setup and 'glassView.sourceView = sourceView' in setup
         assert 'glassView.ngNonblockingRendering = ngUseHostPosition' in setup
-        assert 'if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }' in setup
-        assert 'glassView.captureWillBegin = { [weak self] in' in setup
-        assert 'glassView.captureDidEnd = { [weak self] in' in setup
-        assert 'glassView.captureItemLayer = { [weak self] context, sourceView in' in setup
+        assert 'glassView.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })' in setup
+        assert 'if !ngUseHostPosition {\n            glassView.captureWillBegin' in setup
         for phase in (setup, grow):
-            assert 'container.addSubview(glassView)' in phase
-            assert 'container.insertSubview(glassView, aboveSubview: selectionView)' not in phase
+            assert 'container.insertSubview(glassView, aboveSubview: selectionView)' in phase
         assert 'glassView.resumeRendering()' in grow and 'animator.morph(from: startFrame, to: growthTarget' in grow
-        assert 'self.selectionView.layer.transform = LensMorph.transform(mapping: pillLocal, onto: localFrame)' in grow
+        assert 'if !self.ngUseHostPosition {\n                self.selectionView.layer.transform' in grow
         assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
         assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
         assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
-        assert 'let share = min(max((progress - 0.72) / 0.28, 0), 1)' in shrink
-        assert 'self.selectionView.alpha = share' in shrink
-        assert 'glassView.alpha = 1 - share' in shrink
-        assert 'ngPlaceOpaqueReleasePill' not in shrink
-        assert 'selectionView.alpha = 0' in shrink
-        assert 'ngCapsuleBackdrop' not in setup
-        assert 'ngCapsuleBackdrop' not in (tab + surface + renderer)
-        assert 'solidBackdrop' not in renderer
-        assert 'frostedLens' not in renderer
-        assert 'let renderScale = currentRefractionQuality.renderScale' in renderer
-        assert 'configuration.effectiveBlurRadius(for: currentQuality, pixelsPerPoint: pixelsPerPoint)' in renderer
-        assert 'originalSourceTexture: sourceTexture' in renderer
+        release = section(tab, '    private func ngPlaceOpaqueReleasePill(', '    private func hideTheseus()')
+        assert 'selectionView.alpha = 1' in release and 'selectionView.isHidden = false' in release
+        assert 'selectionView.center = CGPoint(x: pill.midX, y: pill.midY)' in release
+        assert shrink.index('ngPlaceOpaqueReleasePill(releaseFrame)') < shrink.index('animator.morph(')
+        assert 'self.ngPlaceOpaqueReleasePill(frame)' in shrink and 'glassView.alpha = 1 - min(max(progress, 0), 1)' in shrink
+        assert 'selectionView.alpha = 0' not in shrink
+        assert 'if ngUseHostPosition {\n            glassView.ngCapsuleBackdrop = selectionView.renderedCenterColor' in setup
         for name in ('BackgroundCaptureDraw.swift', 'ViewLayerCapture.swift'):
             capture = (a/name).read_text()
-            assert 'solidBackdrop' not in capture
-            assert 'sourceView.layer.render(in: ctx)' in capture
+            assert 'if let solidBackdrop {' in capture and 'ctx.setFillColor(solidBackdrop)' in capture
+            assert 'if solidBackdrop == nil { sourceView.layer.render(in: ctx) }' in capture
+        assert renderer.count('solidBackdrop: (hostView as? TheseusView)?.ngCapsuleBackdrop?.cgColor') == 2
+        fallback = (a/'VisualEffectFallback.swift').read_text()
+        assert 'blurView.isHidden = ngCapsuleBackdrop != nil' in fallback
         edges = section(tab, '    private func updateEdgeLayers(', '    /// One composite of chrome')
         assert 'floor(inWindow.minX * scale)' in edges and 'ceil(inWindow.maxY * scale)' in edges
         assert edges.count('antialias: ngUseHostPosition') == 2
         assert 'ngRimCoverage(distance, normalX: normalX, normalY: normalY)' in tab
-        assert 'progress - 0.72' in shrink
+        assert 'progress - 0.72' not in shrink
         assert 'glassView.pauseRendering()' in shrink
         begin = section(tab, '    private func beginInteraction(', '    /// `time` is the touch')
         assert begin.index('showTheseus()') < begin.index('selectionAnimator?.rest(') < begin.index('followFinger(at:')
