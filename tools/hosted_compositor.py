@@ -135,20 +135,6 @@ def tab(s, rep):
         }
         if window == nil {
             teardownTheseus()''')
-    # Both initial mounting and window reattachment use the same z-order.
-    s = rep(s, '\n        container.addSubview(glassView)\n', '''
-        if ngUseHostPosition { container.insertSubview(glassView, aboveSubview: selectionView) }
-        else { container.addSubview(glassView) }
-''')
-    s = rep(s, '\n            container.addSubview(glassView)\n', '''
-            if ngUseHostPosition { container.insertSubview(glassView, aboveSubview: selectionView) }
-            else { container.addSubview(glassView) }
-''')
-    a = s.index('        glassView.captureWillBegin =')
-    b = s.index('    private func showTheseus()', a)
-    b = s.rindex('    }\n', a, b)
-    callbacks = s[a:b]
-    s = s[:a] + '        if !ngUseHostPosition {\n' + ''.join('    '+line if line.strip() else line for line in callbacks.splitlines(keepends=True)) + '        }\n' + s[b:]
     s = rep(s, '        guard !isDragging, isUserInteractionEnabled else { return }\n', '''        guard !isDragging, isUserInteractionEnabled else { return }
         if ngUseHostPosition {
             guard rawX.isFinite, slotFrames.indices.contains(selectedIndex) else { return }
@@ -171,9 +157,7 @@ def tab(s, rep):
         updateItemColors()''')
     s = rep(s, '        guard isDragging, !itemViews.isEmpty else { return }',
             '        guard !ngUseHostPosition, isDragging, !itemViews.isEmpty else { return }')
-    s = rep(s, '            self.selectionView.layer.transform = LensMorph.transform(mapping: pillLocal, onto: localFrame)', '''            if !self.ngUseHostPosition {
-                self.selectionView.layer.transform = LensMorph.transform(mapping: pillLocal, onto: localFrame)
-            }''')
+    s = rep(s, '            self.selectionView.layer.transform = LensMorph.transform(mapping: pillLocal, onto: localFrame)', '''            self.selectionView.layer.transform = LensMorph.transform(mapping: pillLocal, onto: localFrame)''')
     s = rep(s, '                    if self.isPillFading, !self.selectionView.isHidden {',
-            '                    if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {')
+            '                    if self.isPillFading, !self.selectionView.isHidden {')
     return s
