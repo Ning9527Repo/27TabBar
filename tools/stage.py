@@ -807,12 +807,13 @@ def stage(dst):
         return capsule_policy.surface(s, replace)
 
     def adapted_capture(s, rect):
-        return stability.bounded_capture(opaque_capture(s, rect), replace)
+        s = stability.bounded_capture(opaque_capture(s, rect), replace)
+        return capsule_policy.capture(s, rect, replace)
 
     patches = {'TheseusTabBar.swift':adapted_tab,
                'TheseusRenderer.swift':adapted_renderer,
                'TheseusView.swift':adapted_surface,
-               'VisualEffectFallback.swift':frosted_platter_fallback,
+               'VisualEffectFallback.swift':lambda s: capsule_policy.fallback(frosted_platter_fallback(s), replace),
                'CaptureCompensation.swift':lambda s: stability.bounded_compensation(compensation(s), replace),
                'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
                'ViewLayerCapture.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
