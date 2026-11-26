@@ -68,7 +68,7 @@ def capture(s, rect, rep):
     s = rep(s, '        limitCompensation: Bool = false\n', '''        limitCompensation: Bool = false,
         solidBackdrop: CGColor? = nil
 ''')
-    # Make the solid path source-independent: no page or compensated sublayers.
+    # In opaque mode the lens gets a synthetic gradient, never page pixels.
     for start in ('        let hiddenStates = excludedViews.map', '        let previousVisibility = excludedViews.map'):
         if start in s:
             s = rep(s, start, '        let viewsToHide = solidBackdrop == nil ? excludedViews : []\n' + start.replace('excludedViews', 'viewsToHide'))
@@ -76,7 +76,16 @@ def capture(s, rect, rep):
     s = rep(s, 'zip(excludedViews, ', 'zip(viewsToHide, ')
     s = rep(s, '        let compensation = CaptureCompensation.begin(in: sourceView, region: limitCompensation ? region : nil)',
             '        let compensation = solidBackdrop == nil\n            ? CaptureCompensation.begin(in: sourceView, region: limitCompensation ? region : nil) : []')
-    s = rep(s, '        if opaqueBackdrop {\n', '''        if let solidBackdrop {
+    opaqueFill = ('        if opaqueBackdrop {\n'
+                  '            ctx.setFillColor(UIColor.systemBackground.resolvedColor(with: sourceView.traitCollection).cgColor)\n'
+                  '            ctx.fill(' + rect + ')\n'
+                  '        }\n')
+    s = rep(s, opaqueFill, '''        if solidBackdrop == nil && opaqueBackdrop {
+            ctx.setFillColor(UIColor.systemBackground.resolvedColor(with: sourceView.traitCollection).cgColor)
+            ctx.fill(''' + rect + ''')
+        }
+''')
+    gradient = '''        if let solidBackdrop {
             let components = solidBackdrop.components ?? [0.88, 0.88, 0.88, 1]
             let baseRed = components.count >= 4 ? components[0] : components[0]
             let baseGreen = components.count >= 4 ? components[1] : components[0]
@@ -88,26 +97,29 @@ def capture(s, rect, rep):
                                blue: clamp(baseBlue * factor + bias), alpha: 1)
             }
             let colors: [CGColor] = [
-                neutralGlassColor(0.82, 0),
-                neutralGlassColor(1.04, 0.015),
-                neutralGlassColor(0.90, 0),
-                neutralGlassColor(1.08, 0.01)
+                neutralGlassColor(0.50, 0), neutralGlassColor(0.92, 0.07),
+                neutralGlassColor(0.42, 0), neutralGlassColor(1.10, 0.16),
+                neutralGlassColor(0.45, 0.02), neutralGlassColor(0.96, 0.12),
+                neutralGlassColor(0.48, 0), neutralGlassColor(1.08, 0.14),
+                neutralGlassColor(0.54, 0.01)
             ]
-            let locations: [CGFloat] = [0, 0.30, 0.68, 1]
-            let backdropRect = ''' + rect + '''
+            let locations: [CGFloat] = [0, 0.12, 0.25, 0.38, 0.50, 0.63, 0.76, 0.88, 1]
             if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                           colors: colors as CFArray, locations: locations) {
                 ctx.saveGState()
-                ctx.clip(to: backdropRect)
+                ctx.clip(to: region)
                 ctx.drawLinearGradient(gradient,
-                                       start: CGPoint(x: backdropRect.midX, y: backdropRect.minY),
-                                       end: CGPoint(x: backdropRect.midX, y: backdropRect.maxY),
-                                       options: [])
+                    start: CGPoint(x: region.minX, y: region.midY),
+                    end: CGPoint(x: region.maxX, y: region.midY), options: [])
                 ctx.restoreGState()
+            } else {
+                ctx.setFillColor(solidBackdrop)
+                ctx.fill(region)
             }
-        } else if opaqueBackdrop {
-''')
-    return rep(s, '        sourceView.layer.render(in: ctx)\n', '        if solidBackdrop == nil { sourceView.layer.render(in: ctx) }\n')
+        }
+        if solidBackdrop == nil { sourceView.layer.render(in: ctx) }
+'''
+    return rep(s, '        sourceView.layer.render(in: ctx)\n', gradient)
 
 
 def fallback(s, rep):
