@@ -118,7 +118,7 @@ def tabbar(s):
         let exclusions = [self, ngExcludedBar].compactMap { $0 }
         backgroundGlassView.setCaptureExcludedViews(exclusions)
         selectionView.setCaptureExcludedViews(exclusions)
-        if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }
+        theseusView?.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })
         contentView.bounds = bounds''')
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
