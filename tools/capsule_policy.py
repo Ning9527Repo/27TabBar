@@ -80,7 +80,10 @@ def capture(s, rect, rep):
                   '            ctx.setFillColor(UIColor.systemBackground.resolvedColor(with: sourceView.traitCollection).cgColor)\n'
                   '            ctx.fill(' + rect + ')\n'
                   '        }\n')
-    s = rep(s, opaqueFill, '''        if solidBackdrop == nil && opaqueBackdrop {
+    s = rep(s, opaqueFill, '''        if let solidBackdrop {
+            ctx.setFillColor(solidBackdrop)
+            ctx.fill(''' + rect + ''')
+        } else if opaqueBackdrop {
             ctx.setFillColor(UIColor.systemBackground.resolvedColor(with: sourceView.traitCollection).cgColor)
             ctx.fill(''' + rect + ''')
         }

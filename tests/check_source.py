@@ -20,7 +20,7 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.10'
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.11'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -48,35 +48,131 @@ def check():
         else:
             raise AssertionError('Missing upstream anchors accepted')
         changed = {p.name for p in a.glob('*.swift') if p.read_bytes() != next((ROOT/'Vendor/Theseus/Sources').rglob(p.name)).read_bytes()}
-        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift','BackgroundCaptureDraw.swift','ViewLayerCapture.swift'}
+        assert changed == {'TheseusTabBar.swift','TheseusRenderer.swift','TheseusView.swift','CaptureCompensation.swift','BackgroundCaptureDraw.swift','ViewLayerCapture.swift','VisualEffectFallback.swift'}
         tab = (a/'TheseusTabBar.swift').read_text()
         renderer = (a/'TheseusRenderer.swift').read_text()
         surface = (a/'TheseusView.swift').read_text()
         upstream_tab = next((ROOT/'Vendor/Theseus/Sources').rglob('TheseusTabBar.swift')).read_text()
-        assert 'ngInvalidatePageFrames()\n        selectedIndex = index' in tab
         assert 'if confirmed != selectedIndex { ngInvalidatePageFrames() }' in tab
+        assert tab.count('selectionView.ngEnableSolidSelection()') == 1
+        assert 'selectionView.ngInvalidateBackdrop' not in tab
+        assert 'if !ngUseHostPosition { selectionView.sourceView = source }' in tab
+        assert 'if !self.ngUseHostPosition, self.selectionView.sourceView == nil {' in tab
+        solid = surface.split('    func ngEnableSolidSelection() {', 1)[1].split('    var ngNonblockingRendering', 1)[0]
+        for invariant in ('renderer = nil', 'providesCaptureSnapshot = false', 'sourceView = nil',
+                          'fallbackView?.isHidden = true', 'metalLayerView?.isHidden = true',
+                          'UIColor(white: tone, alpha: 1)', 'backgroundColor = fill',
+                          'layer.cornerRadius = shape.cornerRadius'):
+            assert invariant in solid, invariant
+        for method in ('setupRenderer()', 'updateRenderingMode()', 'ngPrepareReplacement()',
+                       'ngRefreshPlatter(crossfade: Bool, onReveal: ((Bool) -> Void)? = nil) -> Bool'):
+            guard = 'return false' if method.startswith('ngRefreshPlatter') else 'return'
+            assert method + ' {\n        guard !ngSolidSelection else { ' + guard + ' }' in surface
         assert 'NGTabPresentation.slotStrip(platter: backgroundView.frame)' in tab
         assert 'NGTabPresentation.capsule(slot: itemFrame)' in tab
-        for marker, end in [('    private let backgroundGlassView:', '    /// Native iOS 27 pill'),
-                            ('    private func followFinger(', '    private func finishInteraction('),
-                            ('    private func applyBarBodyGain(', '    private func startFlexSpread('),
-                            ('private final class SelectionAnimator', 'private final class LensMorphAnimator')]:
-            def section(text):
-                start = text.index(marker)
-                return text[start:text.index(end, start)]
-            assert section(tab) == section(upstream_tab), marker
-        assert 'pressGesture.minimumPressDuration = 0' in tab
-        assert 'pressGesture.allowableMovement = .greatestFiniteMagnitude' in tab
-        assert 'ngTap' not in tab and 'ngInteractiveLens' not in renderer
-        assert 'metalLayer?.presentsWithTransaction = continuousUpdate' in renderer
-        assert 'let renderScale = currentRefractionQuality.renderScale' in renderer
-        assert 'let onSnapshot = self.onSnapshot' in renderer
-        assert surface.count('self.ngBackdropEpoch == epoch') == 3
-        assert 'ngOpaqueBackdrop && !isUsingFallback' in surface
-        assert 'let fill = renderedCenterColor ?? cover.backgroundColor' in surface
-        assert 'insertSubview(cover, aboveSubview: metal)' in surface
-        assert 'cover.layer.removeAllAnimations()' in surface
-        assert 'UIView.animate(withDuration: 0.08' in surface
+        def section(text, marker, end):
+            start = text.index(marker)
+            return text[start:text.index(end, start)]
+        assert section(tab, '    private let selectionView:', '    /// Native iOS 27 pill') == section(upstream_tab, '    private let selectionView:', '    /// Native iOS 27 pill')
+        lens_setup = section(tab, '        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')
+        upstream_lens_setup = section(upstream_tab, '        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')
+        expected_lens_setup = upstream_lens_setup.replace('config.edgeEffects.rimGlow = 0', 'config.edgeEffects.rimGlow = 0.25').replace('config.edgeEffects.glareIntensity = 0', 'config.edgeEffects.glareIntensity = 0.12')
+        assert lens_setup == expected_lens_setup
+        assert 'config.edgeEffects.rimGlow = 0.25' in lens_setup
+        assert 'config.edgeEffects.glareIntensity = 0.12' in lens_setup
+        hosted = section(tab, '    private func ngInstallHostedChrome()', '    private func ngInvalidatePageFrames(')
+        for token in ('ngHostedPlatter.overrideUserInterfaceStyle = .light',
+                      'backgroundGlassView.removeFromSuperview()', 'pillShadeLayer.removeFromSuperlayer()',
+                      'ngSetHostedColor(tint.cgColor',
+                      'selectionView.ngSetSolidSelectionTone(dark: dark, animated: animate)'):
+            assert token in hosted, token
+        assert 'UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialLight))' in tab
+        assert 'ngHostedPlatter.frame = bodyFrame' in tab
+        assert 'ngHostedPlatter.effect = nil' not in tab
+        assert 'ngHostedBacking' not in tab
+        assert 'alpha: reduce ? 1 : (dark ? 0.76 : 0.22)' in hosted
+        assert 'ngHostedPlatter.isOpaque = true' not in hosted
+        assert 'selectionView.layer.cornerCurve = .continuous' in tab
+        assert 'NGTabPresentation.pixelAligned(screenFrame, scale: scale)' in tab
+        for method in ('setBarLifted(_ lifted: Bool)', 'applyBarTransform()', 'applyBarBodyGain(progress: CGFloat)'):
+            assert 'private func ' + method + ' {\n        guard !ngUseHostPosition else { return }' in tab
+        assert 'ngTap.require(toFail: pressGesture)' in tab and 'ngTap.require(toFail: panGesture)' in tab
+        assert tab.count('if ngUseHostPosition && !ngAcceptGesture(gesture) { return }') == 2
+        setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
+        grow = section(tab, '    private func showTheseus()', '    private func hideTheseus()')
+        shrink = section(tab, '    private func hideTheseus()', '    /// Places the lens without resizing')
+        assert 'ngUseHostPosition ? contentView : theseusSourceView?.superview' in tab
+        assert 'window?.rootViewController?.view' in tab
+        assert 'let sourceView = theseusSourceView' in setup and 'glassView.sourceView = sourceView' in setup
+        assert 'glassView.ngNonblockingRendering = ngUseHostPosition' in setup
+        assert 'config.edgeEffects.rimGlow = 0.25' in setup
+        assert 'config.edgeEffects.glareIntensity = 0.12' in setup
+        assert 'glassView.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })' in setup
+        assert 'if !ngUseHostPosition {\n            glassView.captureWillBegin' in setup
+        for phase in (setup, grow):
+            assert 'container.insertSubview(glassView, aboveSubview: selectionView)' in phase
+        assert 'glassView.resumeRendering()' in grow and 'animator.morph(from: startFrame, to: growthTarget' in grow
+        assert 'if !self.ngUseHostPosition {\n                self.selectionView.layer.transform' in grow
+        assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
+        assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
+        assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
+        release = section(tab, '    private func ngPlaceOpaqueReleasePill(', '    private func hideTheseus()')
+        assert 'selectionView.alpha = 1' in release and 'selectionView.isHidden = false' in release
+        assert 'selectionView.center = CGPoint(x: pill.midX, y: pill.midY)' in release
+        assert shrink.index('ngPlaceOpaqueReleasePill(releaseFrame)') < shrink.index('animator.morph(')
+        assert 'self.ngPlaceOpaqueReleasePill(frame)' in shrink and 'glassView.alpha = 1 - min(max(progress, 0), 1)' in shrink
+        assert 'selectionView.alpha = 0' not in shrink
+        assert 'if ngUseHostPosition {\n            glassView.ngCapsuleBackdrop = selectionView.renderedCenterColor' in setup
+        for name in ('BackgroundCaptureDraw.swift', 'ViewLayerCapture.swift'):
+            capture = (a/name).read_text()
+            assert 'if let solidBackdrop {' in capture
+            assert 'ctx.setFillColor(solidBackdrop)' in capture
+            assert 'if solidBackdrop == nil { sourceView.layer.render(in: ctx) }' in capture
+        assert renderer.count('solidBackdrop: (hostView as? TheseusView)?.ngCapsuleBackdrop?.cgColor') == 2
+        fallback = (a/'VisualEffectFallback.swift').read_text()
+        assert 'blurView.isHidden = ngCapsuleBackdrop != nil' in fallback
+        edges = section(tab, '    private func updateEdgeLayers(', '    /// One composite of chrome')
+        assert 'floor(inWindow.minX * scale)' in edges and 'ceil(inWindow.maxY * scale)' in edges
+        assert edges.count('antialias: ngUseHostPosition') == 2
+        assert 'ngRimCoverage(distance, normalX: normalX, normalY: normalY)' in tab
+        assert 'progress - 0.72' not in shrink
+        assert 'glassView.pauseRendering()' in shrink
+        begin = section(tab, '    private func beginInteraction(', '    /// `time` is the touch')
+        assert begin.index('showTheseus()') < begin.index('selectionAnimator?.rest(') < begin.index('followFinger(at:')
+        assert 'items[pressed].ngEnabled' in begin
+        assert 'direct: ngUseHostPosition' in tab and 'transform.m41 += containerFrame.midX - current.midX' in begin
+        for dead in ('ngBeginHostedDrag', 'ngFinishHostedDrag', 'ngSyncDragPill', 'ngRenderHostedLens', 'ngHostedDragLens'):
+            assert not any(dead in src for src in (tab, renderer, surface)), dead
+        render = section(renderer, '    private func performRender(', '    /// A glass with a lens chain')
+        assert render.count('from: sourceView,') >= 2 and render.count('excludedViews: excludedViews,') == 2
+        assert 'NGSystemTabCaptureBegin()' in render and 'NGSystemTabCaptureEnd()' in render
+        assert 'metalLayer?.presentsWithTransaction = continuousUpdate && !ngNonblockingRendering' in renderer
+        assert 'ngDrawableQueue.async' in renderer and 'self.ngDrawableEpoch == epoch' in renderer
+        assert 'ngNonblockingRendering ? ngTakeDrawable(metalLayer) : metalLayer.nextDrawable()' in renderer
+        assert renderer.count('limitCompensation: ngNonblockingRendering') == 2
+        assert 'commandBuffer.addCompletedHandler { _ in recycle() }' in renderer
+        assert surface.count('self.ngBackdropEpoch == epoch') == 2
+        ordinary = section(tab, '    private func ngInvalidatePageFrames()', '    private var ngRefreshingItems')
+        assert 'ngRefreshPlatter(crossfade: false)' in ordinary
+        refresh = section(surface, '    func ngRefreshPlatter(', '    func ngPrepareReplacement()')
+        assert 'ngSwitchCover' not in surface and 'metal.alpha' not in refresh
+        assert 'if crossfade, ngPresented, !isUsingFallback' in refresh
+        assert 'ngAppearanceGate.accept(ticket)' in refresh
+        assert 'ngAppearanceGate.prepare(dark: dark)' in refresh
+        assert 'fade.fromValue = visibleOpacity' in refresh and 'ngAppearanceImage.opacity = shownOpacity' in refresh
+        timeout = section(surface, '    private func ngCheckPlatterAppearance(', '    private func ngFinishPlatterAppearance(')
+        assert 'self.ngPrepareReplacement()' in timeout and 'self.ngClearPlatterAppearance()' in timeout
+        assert 'ngFinishPlatterAppearance(' not in timeout and 'reveal?(true)' not in timeout
+        assert 'ngPlatterBecameActive' in surface and '!self.ngBackdropHeld' in timeout
+        assert 'visiblePresent(ticket)' in renderer and 'ticket.dark == (hostView.traitCollection.userInterfaceStyle == .dark)' in renderer
+        assert 'adaptDarkWeight = target' in tab and 'adaptDarkTarget = target' in tab
+        assert 'reveal?(true)' in refresh and 'if notify { reveal?(false) }' in refresh
+        assert 'self?.ngFinishHostedPalette(animated: animated)' in tab
+        assert 'drawable.addPresentedHandler' in renderer and 'shown.presentedTime > 0' in renderer
+        bridge = (ROOT/'Sources/Bridge.swift').read_text()
+        style = section(bridge, '    private func syncAppearance(', '    func preserveReplacement(')
+        assert 'let style = bar.overrideUserInterfaceStyle' in style and 'traitCollection' not in style
+        assert 'fade.fromValue = previous' in solid and 'fade.toValue = fill.cgColor' in solid
         assert 'captureSnapshot = nil\n        captureSnapshotOverride = nil' in surface
         assert 'metalLayerView?.alpha = 0' in surface and 'metalLayerView?.alpha = 1' in surface
         # Exercise real ar/tar writer with explicit fixture bytes for both path variants.
@@ -99,6 +195,7 @@ def check():
                 assert f'Architecture: iphoneos-{arch}\n' in control
                 assert 'Name: 27TabBar\n' in control
                 assert 'Author: Ning\n' in control and 'Maintainer: Ning\n' in control
+                assert 'Ning&valzevul' not in control
             with tarfile.open(fileobj=io.BytesIO(members['data.tar.gz']), mode='r:gz') as tar:
                 verify_tar_layout(tar.getmembers(), expected)
                 files = {x.name[2:]:tar.extractfile(x).read() for x in tar if x.isfile()}
