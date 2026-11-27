@@ -101,13 +101,13 @@ def check():
         setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
         grow = section(tab, '    private func showTheseus()', '    private func hideTheseus()')
         shrink = section(tab, '    private func hideTheseus()', '    /// Places the lens without resizing')
-        assert 'ngUseHostPosition ? contentView : theseusSourceView?.superview' in tab
+        assert 'ngUseHostPosition ? self : theseusSourceView?.superview' in tab
         assert 'window?.rootViewController?.view' in tab
         assert 'let sourceView = theseusSourceView' in setup and 'glassView.sourceView = sourceView' in setup
         assert 'glassView.ngNonblockingRendering = ngUseHostPosition' in setup
         assert 'config.edgeEffects.rimGlow = 0.25' in setup
         assert 'config.edgeEffects.glareIntensity = 0.12' in setup
-        assert 'glassView.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })' in setup
+        assert 'glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })' in setup
         assert 'if !ngUseHostPosition {\n            glassView.captureWillBegin' in setup
         for phase in (setup, grow):
             assert 'container.insertSubview(glassView, aboveSubview: selectionView)' in phase
@@ -116,6 +116,9 @@ def check():
         assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
         assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
         assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
+        assert 'glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })' in setup
+        assert 'ngUseHostPosition ? self : theseusSourceView?.superview' in tab
+        assert 'if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }' in tab
         assert 'ngEnableSolidSelection()' in tab and 'UIColor(white: tone, alpha: 1)' in surface
         assert 'sourceView = nil' in surface and 'renderer = nil' in surface
         assert 'ngCapsuleBackdrop' not in setup and 'solidBackdrop' not in renderer and 'ngCapsuleBackdrop' not in surface

@@ -118,12 +118,12 @@ def tabbar(s):
         let exclusions = [self, ngExcludedBar].compactMap { $0 }
         backgroundGlassView.setCaptureExcludedViews(exclusions)
         selectionView.setCaptureExcludedViews(exclusions)
-        theseusView?.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })
+        if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }
         contentView.bounds = bounds''')
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
             return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: ngUseHostPosition ? barFrame.minY : 0, width: itemWidth, height: itemHeight)''')
-    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? contentView : theseusSourceView?.superview\n')
+    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? self : theseusSourceView?.superview\n')
     s = replace(s, '''        config.refraction.magnificationCenterY = 0
         config.refraction.intensity = 1.1
         config.edgeEffects.rimGlow = 0
@@ -133,7 +133,7 @@ def tabbar(s):
         config.edgeEffects.rimGlow = 0.25
         config.edgeEffects.glareIntensity = 0.12
 ''')
-    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        glassView.ngNonblockingRendering = ngUseHostPosition\n        glassView.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })\n        glassView.isHidden')
+    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        glassView.ngNonblockingRendering = ngUseHostPosition\n        glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })\n        glassView.isHidden')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)
         case .cancelled, .failed:
