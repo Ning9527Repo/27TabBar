@@ -97,20 +97,31 @@ def capture(s, rect, rep):
                                blue: clamp(baseBlue * factor + bias), alpha: 1)
             }
             let colors: [CGColor] = [
-                neutralGlassColor(0.50, 0), neutralGlassColor(0.92, 0.07),
-                neutralGlassColor(0.42, 0), neutralGlassColor(1.10, 0.16),
-                neutralGlassColor(0.45, 0.02), neutralGlassColor(0.96, 0.12),
-                neutralGlassColor(0.48, 0), neutralGlassColor(1.08, 0.14),
-                neutralGlassColor(0.54, 0.01)
+                neutralGlassColor(0.965, 0),
+                neutralGlassColor(1.015, 0.006),
+                neutralGlassColor(0.975, 0.002)
             ]
-            let locations: [CGFloat] = [0, 0.12, 0.25, 0.38, 0.50, 0.63, 0.76, 0.88, 1]
+            let locations: [CGFloat] = [0, 0.54, 1]
             if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                           colors: colors as CFArray, locations: locations) {
                 ctx.saveGState()
                 ctx.clip(to: region)
                 ctx.drawLinearGradient(gradient,
-                    start: CGPoint(x: region.minX, y: region.midY),
-                    end: CGPoint(x: region.maxX, y: region.midY), options: [])
+                    start: CGPoint(x: region.minX, y: region.maxY),
+                    end: CGPoint(x: region.maxX, y: region.minY), options: [])
+                let highlight = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                    colors: [UIColor.white.withAlphaComponent(0.10).cgColor,
+                             UIColor.white.withAlphaComponent(0).cgColor] as CFArray,
+                    locations: [0, 1])
+                if let highlight {
+                    ctx.saveGState()
+                    ctx.translateBy(x: region.minX, y: region.minY)
+                    ctx.scaleBy(x: region.width, y: region.height)
+                    ctx.drawRadialGradient(highlight,
+                        startCenter: CGPoint(x: 0.27, y: 0.24), startRadius: 0.01,
+                        endCenter: CGPoint(x: 0.27, y: 0.24), endRadius: 0.70, options: [])
+                    ctx.restoreGState()
+                }
                 ctx.restoreGState()
             } else {
                 ctx.setFillColor(solidBackdrop)

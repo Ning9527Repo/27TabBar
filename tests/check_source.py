@@ -20,7 +20,7 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.7'
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.8'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -73,9 +73,13 @@ def check():
         def section(text, marker, end):
             start = text.index(marker)
             return text[start:text.index(end, start)]
-        for marker, end in [('    private let selectionView:', '    /// Native iOS 27 pill'),
-                            ('        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')]:
-            assert section(tab, marker, end) == section(upstream_tab, marker, end), marker
+        assert section(tab, '    private let selectionView:', '    /// Native iOS 27 pill') == section(upstream_tab, '    private let selectionView:', '    /// Native iOS 27 pill')
+        lens_setup = section(tab, '        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')
+        upstream_lens_setup = section(upstream_tab, '        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')
+        expected_lens_setup = upstream_lens_setup.replace('config.edgeEffects.rimGlow = 0', 'config.edgeEffects.rimGlow = 0.25').replace('config.edgeEffects.glareIntensity = 0', 'config.edgeEffects.glareIntensity = 0.12')
+        assert lens_setup == expected_lens_setup
+        assert 'config.edgeEffects.rimGlow = 0.25' in lens_setup
+        assert 'config.edgeEffects.glareIntensity = 0.12' in lens_setup
         hosted = section(tab, '    private func ngInstallHostedChrome()', '    private func ngInvalidatePageFrames(')
         for token in ('ngHostedPlatter.overrideUserInterfaceStyle = .light',
                       'backgroundGlassView.removeFromSuperview()', 'pillShadeLayer.removeFromSuperlayer()',
@@ -101,6 +105,8 @@ def check():
         assert 'window?.rootViewController?.view' in tab
         assert 'let sourceView = theseusSourceView' in setup and 'glassView.sourceView = sourceView' in setup
         assert 'glassView.ngNonblockingRendering = ngUseHostPosition' in setup
+        assert 'config.edgeEffects.rimGlow = 0.25' in setup
+        assert 'config.edgeEffects.glareIntensity = 0.12' in setup
         assert 'glassView.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })' in setup
         assert 'if !ngUseHostPosition {\n            glassView.captureWillBegin' in setup
         for phase in (setup, grow):
