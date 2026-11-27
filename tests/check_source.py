@@ -20,7 +20,7 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.11'
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.12'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -116,21 +116,14 @@ def check():
         assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
         assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
         assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
-        release = section(tab, '    private func ngPlaceOpaqueReleasePill(', '    private func hideTheseus()')
-        assert 'selectionView.alpha = 1' in release and 'selectionView.isHidden = false' in release
-        assert 'selectionView.center = CGPoint(x: pill.midX, y: pill.midY)' in release
-        assert shrink.index('ngPlaceOpaqueReleasePill(releaseFrame)') < shrink.index('animator.morph(')
-        assert 'self.ngPlaceOpaqueReleasePill(frame)' in shrink and 'glassView.alpha = 1 - min(max(progress, 0), 1)' in shrink
-        assert 'selectionView.alpha = 0' not in shrink
-        assert 'if ngUseHostPosition {\n            glassView.ngCapsuleBackdrop = selectionView.renderedCenterColor' in setup
-        for name in ('BackgroundCaptureDraw.swift', 'ViewLayerCapture.swift'):
-            capture = (a/name).read_text()
-            assert 'if let solidBackdrop {' in capture
-            assert 'ctx.setFillColor(solidBackdrop)' in capture
-            assert 'if solidBackdrop == nil { sourceView.layer.render(in: ctx) }' in capture
-        assert renderer.count('solidBackdrop: (hostView as? TheseusView)?.ngCapsuleBackdrop?.cgColor') == 2
-        fallback = (a/'VisualEffectFallback.swift').read_text()
-        assert 'blurView.isHidden = ngCapsuleBackdrop != nil' in fallback
+        assert 'ngEnableSolidSelection()' in tab and 'UIColor(white: tone, alpha: 1)' in surface
+        assert 'sourceView = nil' in surface and 'renderer = nil' in surface
+        assert 'ngCapsuleBackdrop' not in setup and 'solidBackdrop' not in renderer and 'ngCapsuleBackdrop' not in surface
+        assert 'let pill = self.convertFromTheseusContainer(frame)' in shrink
+        assert 'let capsuleShare = min(max(progress, 0), 1)' in shrink
+        assert 'self.selectionView.alpha = capsuleShare' in shrink
+        assert 'glassView.alpha = 1 - capsuleShare' in shrink
+        assert 'progress - 0.72' not in shrink
         edges = section(tab, '    private func updateEdgeLayers(', '    /// One composite of chrome')
         assert 'floor(inWindow.minX * scale)' in edges and 'ceil(inWindow.maxY * scale)' in edges
         assert edges.count('antialias: ngUseHostPosition') == 2

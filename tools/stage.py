@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 import sys
 
-import capsule_policy
 import hosted_appearance
 import hosted_compositor
 import hosted_motion
@@ -607,10 +606,13 @@ def motion_policy(s):
         guard !releaseFrame.isEmpty, !animationBase.isEmpty else { endDragImmediately(); return }''')
     s = replace(s, '            glassView.layer.transform = LensMorph.transform(mapping: releaseFrame, onto: frame)', '''            glassView.layer.transform = LensMorph.transform(mapping: animationBase, onto: frame)
             if self.ngUseHostPosition {
-                // The settled pill only takes over once the lens is near the target.
-                let share = min(max((progress - 0.72) / 0.28, 0), 1)
-                self.selectionView.alpha = share
-                glassView.alpha = 1 - share
+                let pill = self.convertFromTheseusContainer(frame)
+                self.selectionView.bounds = CGRect(origin: .zero, size: pill.size)
+                self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)
+                self.selectionView.shape.cornerRadius = pill.height / 2
+                let capsuleShare = min(max(progress, 0), 1)
+                self.selectionView.alpha = capsuleShare
+                glassView.alpha = 1 - capsuleShare
             }''')
     s = replace(s, '            self.isCollapsingLens = false\n            self.selectionView.isHidden = false', '''            self.isCollapsingLens = false
             if self.ngUseHostPosition {
@@ -800,29 +802,26 @@ def stage(dst):
         s = opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s))))
         s = stability.appearance_tab(stability.drag_tab(s, replace), replace)
         s = hosted_appearance.tab(hosted_motion.tab(s, replace), replace)
-        s = capsule_policy.tab(hosted_compositor.tab(s, replace), replace)
+        s = hosted_compositor.tab(s, replace)
         return platter_edges.tab(s, replace)
 
     def adapted_renderer(s):
         s = nonblocking_lens_renderer(renderer_frame_policy(renderer(s)))
         s = stability.appearance_renderer(stability.drag_renderer(s, replace), replace)
-        s = hosted_appearance.renderer(hosted_motion.renderer(s, replace), replace)
-        return capsule_policy.renderer(s, replace)
+        return hosted_appearance.renderer(hosted_motion.renderer(s, replace), replace)
 
     def adapted_surface(s):
         s = opaque_selection_surface(motion_surface(surface_frame_policy(surface(s))))
         s = stability.appearance_surface(s, replace)
-        s = hosted_appearance.surface(hosted_motion.surface(s, replace), replace)
-        return capsule_policy.surface(s, replace)
+        return hosted_appearance.surface(hosted_motion.surface(s, replace), replace)
 
     def adapted_capture(s, rect):
-        s = stability.bounded_capture(opaque_capture(s, rect), replace)
-        return capsule_policy.capture(s, rect, replace)
+        return stability.bounded_capture(opaque_capture(s, rect), replace)
 
     patches = {'TheseusTabBar.swift':adapted_tab,
                'TheseusRenderer.swift':adapted_renderer,
                'TheseusView.swift':adapted_surface,
-               'VisualEffectFallback.swift':lambda s: capsule_policy.fallback(frosted_platter_fallback(s), replace),
+               'VisualEffectFallback.swift':frosted_platter_fallback,
                'CaptureCompensation.swift':lambda s: stability.bounded_compensation(compensation(s), replace),
                'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
                'ViewLayerCapture.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
