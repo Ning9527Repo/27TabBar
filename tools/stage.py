@@ -124,6 +124,14 @@ def tabbar(s):
             let slot = rtl ? itemViews.count - index - 1 : index
             return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: ngUseHostPosition ? barFrame.minY : 0, width: itemWidth, height: itemHeight)''')
     s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? contentView : theseusSourceView?.superview\n')
+    s = replace(s, '    private func setupTheseus() {\n        guard theseusView == nil else { return }\n        guard let container = theseusContainer,\n              let sourceView = theseusSourceView else { return }', '''    private var theseusCaptureSourceView: UIView? {
+        ngUseHostPosition ? contentView : theseusSourceView
+    }
+
+    private func setupTheseus() {
+        guard theseusView == nil else { return }
+        guard let container = theseusContainer,
+              let sourceView = theseusCaptureSourceView else { return }''')
     s = replace(s, '''        config.refraction.magnificationCenterY = 0
         config.refraction.intensity = 1.1
         config.edgeEffects.rimGlow = 0
@@ -136,12 +144,6 @@ def tabbar(s):
     s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '''        glassView.sourceView = sourceView
         glassView.ngNonblockingRendering = ngUseHostPosition
         glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })
-        if ngUseHostPosition {
-            var lensConfig = glassView.configuration
-            lensConfig.lensFill = 1
-            lensConfig.lensFillColor = UIColor(white: systemIsDark ? 0.26 : 0.88, alpha: 1)
-            glassView.configuration = lensConfig
-        }
         glassView.isHidden''')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)

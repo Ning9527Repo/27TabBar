@@ -135,19 +135,17 @@ def tab(s, rep):
         }
         if window == nil {
             teardownTheseus()''')
-    # Keep the pill and live item row as separate layers above the lens.
+    # Preserve the upstream order: selection, lens, then its captured item layer.
     s = rep(s, '\n        container.addSubview(glassView)\n', '''
-        if ngUseHostPosition {
-            contentView.insertSubview(glassView, aboveSubview: selectionView)
-            if let items = itemsContainerView { contentView.bringSubviewToFront(items) }
-        } else { container.addSubview(glassView) }
+        if ngUseHostPosition { container.insertSubview(glassView, aboveSubview: selectionView) }
+        else { container.addSubview(glassView) }
 ''')
     s = rep(s, '\n            container.addSubview(glassView)\n', '''
-            if ngUseHostPosition {
-                contentView.insertSubview(glassView, aboveSubview: selectionView)
-                if let items = itemsContainerView { contentView.bringSubviewToFront(items) }
-            } else { container.addSubview(glassView) }
+            if ngUseHostPosition { container.insertSubview(glassView, aboveSubview: selectionView) }
+            else { container.addSubview(glassView) }
 ''')
+    s = rep(s, '        glassView.continuousUpdate = true\n        glassView.invalidateBackground()', '''        glassView.continuousUpdate = true
+        glassView.invalidateBackground()''')
     a = s.index('        glassView.captureWillBegin =')
     b = s.index('    private func showTheseus()', a)
     b = s.rindex('    }\n', a, b)
@@ -187,7 +185,11 @@ def tab(s, rep):
         } else {
             fadePill(to: 0, spring: Self.pillFadeOutSpring)
         }''')
-    s = rep(s, '        glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })', '''        glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })
+    s = rep(s, '        glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })', '''        let captureExclusions = ngUseHostPosition
+            ? [glassView, itemsContainerView, captureTwinRow].compactMap { $0 }
+            : [ngExcludedBar].compactMap { $0 }
+        glassView.ngOpaqueBackdrop = ngUseHostPosition
+        glassView.setCaptureExcludedViews(captureExclusions)
         if ngUseHostPosition {
             var lensConfig = glassView.configuration
             lensConfig.lensFill = 1
