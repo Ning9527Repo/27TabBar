@@ -110,8 +110,9 @@ def check():
         assert 'showTheseus()' in tab and 'hideTheseus()' in tab
         assert 'animator.morph(from: startFrame, to: growthTarget' in section(tab, '    private func showTheseus()', '    private func hideTheseus()')
         assert 'glassView.ngHostedDragLens = ngUseHostPosition' in setup
-        assert 'let base = dark ? SIMD3<Float>(0.16, 0.20, 0.25) : SIMD3<Float>(0.70, 0.80, 0.90)' in renderer
-        assert 'let highlight = SIMD3<Float>(0.98, 0.99, 1.0)' in renderer
+        assert 'ngMakeLensBackdrop(236)' in renderer and 'ngMakeLensBackdrop(65)' in renderer
+        assert 'width: 1, height: 1' in renderer
+        assert 'config.edgeFeather = ngUseHostPosition ? 1.0 : TheseusTabBar.pillFeather' in setup
         assert 'ngBeginHostedDrag(at: location.x)' not in tab
         assert 'ngMoveHostedDrag(to: convert(location, to: contentView).x)' not in tab
         assert 'ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x)' not in tab
