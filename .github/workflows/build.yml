@@ -22,10 +22,8 @@ jobs:
         run: python3 tests/check_source.py
       - name: Check replacement state and capsule geometry
         run: python3 tests/test_replacement.py
-      - name: Check hosted production gestures
-        run: python3 tests/test_hosted_compositor.py
-      - name: Check platter rim antialiasing
-        run: python3 tests/test_platter_edges.py
+      - name: Compare restored glass and gestures with upstream
+        run: python3 tests/test_original_glass.py
       - name: Check Xcode Metal toolchain
         run: |
           xcodebuild -version

@@ -4,13 +4,6 @@ import json
 from pathlib import Path
 import sys
 
-import capsule_policy
-import hosted_appearance
-import hosted_compositor
-import hosted_motion
-import platter_edges
-import stability
-
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / 'Vendor/Theseus'
 
@@ -73,7 +66,7 @@ def tabbar(s):
     }
 
     func ngApplyHostFrame(_ next: CGRect) {
-        if isDragging || isCollapsingLens { endDragImmediately() }
+        if isDragging { endDragImmediately() }
         ngHostFrame = next
         frame = next
         setNeedsLayout()
@@ -119,22 +112,13 @@ def tabbar(s):
         let exclusions = [self, ngExcludedBar].compactMap { $0 }
         backgroundGlassView.setCaptureExcludedViews(exclusions)
         selectionView.setCaptureExcludedViews(exclusions)
-        theseusView?.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })
+        if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }
         contentView.bounds = bounds''')
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
             return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: ngUseHostPosition ? barFrame.minY : 0, width: itemWidth, height: itemHeight)''')
-    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? contentView : theseusSourceView?.superview\n')
-    s = replace(s, '''        config.refraction.magnificationCenterY = 0
-        config.refraction.intensity = 1.1
-        config.edgeEffects.rimGlow = 0
-        config.edgeEffects.glareIntensity = 0
-''', '''        config.refraction.magnificationCenterY = 0
-        config.refraction.intensity = 1.1
-        config.edgeEffects.rimGlow = 0.25
-        config.edgeEffects.glareIntensity = 0.12
-''')
-    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        glassView.ngNonblockingRendering = ngUseHostPosition\n        glassView.setCaptureExcludedViews([self, ngExcludedBar].compactMap { $0 })\n        glassView.isHidden')
+    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? self : theseusSourceView?.superview\n')
+    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }\n        glassView.isHidden')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)
         case .cancelled, .failed:
@@ -287,39 +271,19 @@ def compensation(s):
 def tab_frame_policy(s):
     s = replace(s, '    var ngHostIsInteracting: Bool { isDragging || isCollapsingLens }', '''    var ngHostIsInteracting: Bool { isDragging || isCollapsingLens }
 
-    private func ngInvalidatePageFrames(selectionDelay: TimeInterval = 0) {
+    private func ngInvalidatePageFrames() {
         backgroundGlassView.ngInvalidateBackdrop(after: 0)
-        selectionView.ngInvalidateBackdrop(after: selectionDelay)
+        selectionView.ngInvalidateBackdrop(after: 0)
         if let lens = theseusView, !lens.isHidden {
             // Keep the original growing/shrinking lens; refresh its input on release.
             lens.invalidateBackground()
         }
     }''')
-    s = replace(s, '        if isCollapsingLens { endDragImmediately() }\n        selectedIndex = index', '''        if isDragging || isCollapsingLens {
-            let shown = theseusView.flatMap { $0.isHidden ? nil : ngVisibleLensFrame($0) }
-            endDragImmediately()
-            if let shown {
-                let center = convertFromTheseusContainer(shown).midX
-                UIView.performWithoutAnimation { selectionView.center.x = center }
-            }
-        }
-        ngInvalidatePageFrames(selectionDelay: TheseusSettings.shared.areMorphAnimationsEnabled ? 0.22 : 0)
+    s = replace(s, '        if isCollapsingLens { endDragImmediately() }\n        selectedIndex = index', '''        if isCollapsingLens { endDragImmediately() }
+        ngInvalidatePageFrames()
         selectedIndex = index''')
     s = replace(s, '            if isCollapsingLens, confirmed != selectedIndex { endDragImmediately() }\n            selectedIndex = confirmed', '            ngApplySelection(confirmed)')
-    s = replace(s, '        let frame = selectionFrame(for: slotFrame(at: selectedIndex))', '''        let rawFrame = selectionFrame(for: slotFrame(at: selectedIndex))
-        let frame: CGRect
-        if ngUseHostPosition, window != nil {
-            let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
-            let screenFrame = contentView.convert(rawFrame, to: nil)
-            frame = contentView.convert(NGTabPresentation.pixelAligned(screenFrame, scale: scale), from: nil)
-        } else {
-            frame = rawFrame
-        }''')
     s = replace(s, '        if selectionView.shape.cornerRadius != frame.height / 2 {\n            selectionView.shape.cornerRadius = frame.height / 2', '''        let radius = ngUseHostPosition ? min(frame.width, frame.height) / 2 : frame.height / 2
-        if ngUseHostPosition {
-            selectionView.layer.cornerCurve = .continuous
-            selectionView.layer.masksToBounds = true
-        }
         if selectionView.shape.cornerRadius != radius {
             selectionView.shape.cornerRadius = radius''')
     s = replace(s, '            pillShadeLayer.cornerRadius = size.height / 2',
@@ -444,388 +408,14 @@ def surface_frame_policy(s):
     return s
 
 
-def motion_policy(s):
-    s = replace(s, '    var ngActivateNative: ((Int) -> Int?)?', '''    private var ngGestureGate = NGTabInteractionGate()
-    private weak var ngPressGesture: UILongPressGestureRecognizer?
-    private lazy var ngTap = UITapGestureRecognizer(target: self, action: #selector(ngTapped(_:)))
-
-    private func ngAcceptGesture(_ gesture: UIGestureRecognizer) -> Bool {
-        let owner = ObjectIdentifier(gesture)
-        switch gesture.state {
-        case .began:
-            guard !isDragging, isUserInteractionEnabled, slotFrames.indices.contains(selectedIndex) else { return false }
-            let index = findClosestItemIndex(to: gesture.location(in: contentView))
-            guard items.indices.contains(index), items[index].ngEnabled else { return false }
-            return ngGestureGate.begin(owner)
-        case .changed: return ngGestureGate.accepts(owner)
-        case .ended, .cancelled, .failed: return ngGestureGate.end(owner)
-        default: return false
-        }
-    }
-
-    @objc private func ngTapped(_ gesture: UITapGestureRecognizer) {
-        guard gesture.state == .ended, !isDragging, !slotFrames.isEmpty else { return }
-        selectItem(at: findClosestItemIndex(to: gesture.location(in: contentView)))
-    }
-
-    private func ngLensShapeFrame(_ glass: TheseusView, frame: CGRect, bounds: CGRect) -> CGRect? {
-        NGTabPresentation.visibleLens(frame: frame, bounds: bounds,
-                                      inset: CGSize(width: glass.shape.widthInset, height: glass.shape.heightInset))
-    }
-
-    private func ngVisibleLensFrame(_ glass: TheseusView) -> CGRect? {
-        if let live = glass.layer.presentation(),
-           let frame = ngLensShapeFrame(glass, frame: live.frame, bounds: live.bounds) { return frame }
-        return ngLensShapeFrame(glass, frame: glass.layer.frame, bounds: glass.layer.bounds)
-    }
-
-    var ngActivateNative: ((Int) -> Int?)?''')
-    s = replace(s, '            backgroundGlassView.ngOpaqueBackdrop = ngUseHostPosition', '''            ngTap.isEnabled = ngUseHostPosition
-            backgroundGlassView.ngFrostedPlatter = ngUseHostPosition
-            var chrome = backgroundGlassView.configuration
-            chrome.blur.radius = ngUseHostPosition ? 26 : 18
-            chrome.blur.sigma = ngUseHostPosition ? 9 : nil
-            chrome.refraction.interiorSharpness = ngUseHostPosition ? 0 : Self.chromeDetailLight
-            backgroundGlassView.configuration = chrome
-            backgroundGlassView.ngOpaqueBackdrop = ngUseHostPosition''')
-    s = replace(s, '        pressGesture.minimumPressDuration = 0', '        pressGesture.minimumPressDuration = ngUseHostPosition ? 0.15 : 0\n        ngPressGesture = pressGesture')
-    s = replace(s, '        addGestureRecognizer(panGesture)', '''        addGestureRecognizer(panGesture)
-        ngTap.isEnabled = ngUseHostPosition
-        ngTap.delegate = self
-        ngTap.require(toFail: pressGesture)
-        ngTap.require(toFail: panGesture)
-        addGestureRecognizer(ngTap)''')
-    # ngUseHostPosition is set after init; set the existing press recognizer then.
-    s = replace(s, '            ngTap.isEnabled = ngUseHostPosition', '''            ngTap.isEnabled = ngUseHostPosition
-            ngPressGesture?.minimumPressDuration = ngUseHostPosition ? 0.15 : 0
-            ngPressGesture?.allowableMovement = ngUseHostPosition ? 10 : .greatestFiniteMagnitude''')
-    s = replace(s, '    @objc private func handlePress(_ gesture: TouchTimestampingPressGestureRecognizer) {', '''    @objc private func handlePress(_ gesture: TouchTimestampingPressGestureRecognizer) {
-        if ngUseHostPosition && !ngAcceptGesture(gesture) { return }''')
-    s = replace(s, '    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {', '''    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        if ngUseHostPosition && !ngAcceptGesture(gesture) { return }''')
-    s = replace(s, '        guard let pan = gestureRecognizer as? UIPanGestureRecognizer,', '''        if ngUseHostPosition {
-            if gestureRecognizer === ngTap { return !isDragging && !slotFrames.isEmpty }
-            if let pan = gestureRecognizer as? UIPanGestureRecognizer, pan.view === self {
-                let velocity = pan.velocity(in: self)
-                return !slotFrames.isEmpty && abs(velocity.x) > abs(velocity.y)
-            }
-        }
-        guard let pan = gestureRecognizer as? UIPanGestureRecognizer,''')
-    s = replace(s, '        gestureRecognizer.view === self && otherGestureRecognizer.view === self',
-                '        !ngUseHostPosition && gestureRecognizer.view === self && otherGestureRecognizer.view === self')
-    s = replace(s, '        layoutItemViews()\n        updateSelectionViewFrame(animated: false)', '''        layoutItemViews()
-        // A native relayout cannot reset a pill currently mapped onto the lens.
-        if !ngUseHostPosition || (!isDragging && !isCollapsingLens && lensMorphAnimator?.isRunning != true) {
-            updateSelectionViewFrame(animated: false)
-        }''')
-    s = replace(s, '        backgroundGlassView.configuration.refraction.interiorSharpness = isDark ? Self.chromeDetailDark : Self.chromeDetailLight',
-                '        backgroundGlassView.configuration.refraction.interiorSharpness = ngUseHostPosition ? 0 : (isDark ? Self.chromeDetailDark : Self.chromeDetailLight)')
-    a = s.index('    private func applyBarBodyGain(')
-    b = s.index('    private func startFlexSpread(', a)
-    gain = s[a:b]
-    gain = replace(gain, '        backgroundView.backgroundColor = .clear\n',
-                   '        backgroundView.backgroundColor = .clear\n        var config = backgroundGlassView.configuration\n')
-    gain = replace(gain, '        backgroundGlassView.invalidateBackground()', '        backgroundGlassView.configuration = config')
-    gain = gain.replace('backgroundGlassView.configuration.', 'config.')
-    s = s[:a] + gain + s[b:]
-    s = replace(s, '        if let sourceView = theseusSourceView, sourceView.bounds.width > 0 {',
-                '        if let sourceView = theseusSourceView, sourceView.bounds.width > 0, glassView.sourceView !== sourceView {')
-    s = replace(s, '''        let startFrame: CGRect
-        let startProgress: CGFloat
-        if glassView.isHidden {
-            startFrame = pillFrame
-            startProgress = 0
-        } else {
-            startFrame = glassView.frame
-            startProgress = lensItemProgress
-        }''', '''        let startFrame: CGRect
-        let startProgress: CGFloat
-        if glassView.isHidden {
-            let visiblePill = selectionView.layer.presentation()?.frame ?? selectionView.layer.frame
-            startFrame = ngUseHostPosition && !visiblePill.isEmpty
-                ? convertToTheseusContainer(visiblePill) : pillFrame
-            startProgress = 0
-        } else {
-            startFrame = (ngUseHostPosition ? ngVisibleLensFrame(glassView) : nil) ?? glassView.frame
-            startProgress = lensItemProgress
-        }''')
-    s = replace(s, '        glassView.layer.transform = LensMorph.transform(mapping: hostFrame, onto: startFrame)', '''        let morphBase = ngUseHostPosition
-            ? hostFrame.insetBy(dx: lensShape.widthInset, dy: lensShape.heightInset) : hostFrame
-        let growthTarget = ngUseHostPosition ? lensFrame.insetBy(dx: -lensOutset, dy: -lensOutset) : lensFrame
-        glassView.layer.transform = LensMorph.transform(mapping: morphBase, onto: startFrame)''')
-    s = replace(s, 'animator.morph(from: startFrame, to: lensFrame, spring: Self.lensGrowSpring',
-                'animator.morph(from: startFrame, to: growthTarget, spring: Self.lensGrowSpring')
-    # Sample the visible pose BEFORE cancelling transforms. Continue to use
-    # the same drawable and model shape for the entire hosted shrink.
-    s = replace(s, '        selectionAnimator?.cancel()\n        lensMorphAnimator?.cancel()\n        stopLensStretch()\n\n        setBarLifted(false)', '''        let shown = ngUseHostPosition ? ngVisibleLensFrame(glassView) : nil
-        selectionAnimator?.cancel()
-        lensMorphAnimator?.cancel()
-        stopLensStretch()
-
-        setBarLifted(false)''')
-    s = replace(s, '''        selectionView.isHidden = false
-        fadePill(to: 1, spring: Self.pillFadeInSpring)
-        glassView.layer.transform = CATransform3DIdentity
-        let releaseFrame = glassView.frame.insetBy(dx: glassView.shape.widthInset, dy: glassView.shape.heightInset)
-        if glassView.shape.widthInset != 0 || glassView.shape.heightInset != 0 {
-            glassView.frame = releaseFrame
-            var shape = glassView.shape
-            shape.widthInset = 0
-            shape.heightInset = 0
-            shape.cornerRadius = lensCornerRadius(forHeight: releaseFrame.height)
-            glassView.shape = shape
-        }''', '''        if ngUseHostPosition {
-            pillFadeDriver.stop()
-            isPillFading = false
-            selectionView.isHidden = false
-            selectionView.alpha = 0
-        } else {
-            selectionView.isHidden = false
-            fadePill(to: 1, spring: Self.pillFadeInSpring)
-        }
-        let size = glassView.bounds.size
-        let modelFrame = CGRect(x: glassView.center.x - size.width / 2, y: glassView.center.y - size.height / 2,
-                                width: size.width, height: size.height)
-        let releaseFrame: CGRect
-        let animationBase: CGRect
-        if let shown, let base = ngLensShapeFrame(glassView, frame: modelFrame, bounds: glassView.bounds) {
-            releaseFrame = shown
-            animationBase = base
-        } else {
-            glassView.layer.transform = CATransform3DIdentity
-            releaseFrame = glassView.frame.insetBy(dx: glassView.shape.widthInset, dy: glassView.shape.heightInset)
-            animationBase = releaseFrame
-            if glassView.shape.widthInset != 0 || glassView.shape.heightInset != 0 {
-                glassView.frame = releaseFrame
-                var shape = glassView.shape
-                shape.widthInset = 0
-                shape.heightInset = 0
-                shape.cornerRadius = lensCornerRadius(forHeight: releaseFrame.height)
-                glassView.shape = shape
-            }
-        }
-        guard !releaseFrame.isEmpty, !animationBase.isEmpty else { endDragImmediately(); return }''')
-    s = replace(s, '            glassView.layer.transform = LensMorph.transform(mapping: releaseFrame, onto: frame)', '''            glassView.layer.transform = LensMorph.transform(mapping: animationBase, onto: frame)
-            if self.ngUseHostPosition {
-                // The settled pill only takes over once the lens is near the target.
-                let share = min(max((progress - 0.72) / 0.28, 0), 1)
-                self.selectionView.alpha = share
-                glassView.alpha = 1 - share
-            }''')
-    s = replace(s, '            self.isCollapsingLens = false\n            self.selectionView.isHidden = false', '''            self.isCollapsingLens = false
-            if self.ngUseHostPosition {
-                self.updateSelectionViewFrame(animated: false)
-                self.selectionView.alpha = 1
-            }
-            self.selectionView.isHidden = false''')
-    s = replace(s, '    private func endDragImmediately() {\n        isDragging = false',
-                '    private func endDragImmediately() {\n        ngGestureGate.clear()\n        isDragging = false')
-    s = replace(s, '        isDragging = false\n        resetFlexGlow()\n        bodyGainDriver.stop()', '        isDragging = false\n        ngGestureGate.clear()\n        resetFlexGlow()\n        bodyGainDriver.stop()')
-    s = replace(s, '            currentDragVelocity = gesture.velocity(in: self)\n', '''            currentDragVelocity = gesture.velocity(in: self)
-            if ngUseHostPosition { followFinger(at: gesture.location(in: self)) }
-''')
-    # Let the touch spring own the center while the grow morph owns size.
-    # Otherwise the grow spring keeps filtering the moving spring target.
-    s = replace(s, '    private var ngGestureGate = NGTabInteractionGate()',
-                '    private var ngGestureGate = NGTabInteractionGate()\n    private var ngFollowFrame: CGRect?')
-    s = replace(s, '        isDragging = true\n        let anchorX', '        isDragging = true\n        ngFollowFrame = nil\n        let anchorX')
-    s = replace(s, '        let shown = ngUseHostPosition ? ngVisibleLensFrame(glassView) : nil\n        selectionAnimator?.cancel()',
-                '        let shown = ngUseHostPosition ? ngVisibleLensFrame(glassView) : nil\n        ngFollowFrame = nil\n        selectionAnimator?.cancel()')
-    s = replace(s, '                    morph.retarget(to: containerFrame)', '''                    if self.ngUseHostPosition { self.ngFollowFrame = frame }
-                    else { morph.retarget(to: containerFrame) }''')
-    s = replace(s, '            lastFrame = frame\n            glassView.layer.transform = self.stretched', '''            var placed = frame
-            if let follow = self.ngFollowFrame {
-                let target = self.convertToTheseusContainer(follow)
-                placed = frame.offsetBy(dx: target.midX - frame.midX, dy: target.midY - frame.midY)
-            }
-            lastFrame = placed
-            glassView.layer.transform = self.stretched''')
-    s = replace(s, 'LensMorph.transform(mapping: hostFrame, onto: frame))\n            let localFrame = self.convertFromTheseusContainer(frame)',
-                'LensMorph.transform(mapping: morphBase, onto: placed))\n            let localFrame = self.convertFromTheseusContainer(placed)')
-    s = replace(s, '            glassView.layer.transform = self.stretched(CATransform3DIdentity)\n            self.placeLens(at: lastFrame)', '''            self.ngFollowFrame = nil
-            glassView.layer.transform = self.stretched(CATransform3DIdentity)
-            // placeLens adds the rim outset itself; lastFrame already includes it.
-            let body = self.ngUseHostPosition ? lastFrame.insetBy(dx: self.lensOutset, dy: self.lensOutset) : lastFrame
-            self.placeLens(at: body)''')
-    s = replace(s, '        selectionAnimator?.rest(at: restingCenterX)',
-                '        selectionAnimator?.rest(at: restingCenterX, immediate: ngUseHostPosition)')
-    s = replace(s, '    private var flyStart: CFTimeInterval = 0',
-                '    private var flyStart: CFTimeInterval = 0\n    private var flyWait: CFTimeInterval = SelectionAnimator.flyDelay')
-    s = replace(s, 'flyStart = time + Self.flyDelay', 'flyStart = time + flyWait')
-    s = replace(s, '    func rest(at x: CGFloat) {\n        cancel()',
-                '    func rest(at x: CGFloat, immediate: Bool = false) {\n        cancel()\n        flyWait = immediate ? 0 : Self.flyDelay')
-    s = replace(s, '                self.setupTheseus()\n                self.theseusView?.pauseRendering()', '''                guard !self.isDragging, !self.isCollapsingLens else { return }
-                self.setupTheseus()
-                self.theseusView?.pauseRendering()''')
-    return s
-
-
-def nonblocking_lens_renderer(s):
-    s = replace(s, '    var ngCaptureNotBefore: CFTimeInterval = 0',
-                '    var ngCaptureNotBefore: CFTimeInterval = 0\n    var ngNonblockingRendering = false')
-    s = replace(s, 'metalLayer?.presentsWithTransaction = continuousUpdate',
-                'metalLayer?.presentsWithTransaction = continuousUpdate && !ngNonblockingRendering')
-    s = replace(s, '        isRendering = true\n        markAllFramesCompleted()', '''        isRendering = true
-        // Reopening the lens does not make pre-pause work complete.
-        if !ngNonblockingRendering { markAllFramesCompleted() }''')
-    s = replace(s, '        waitForGPUCompletion()\n        markAllFramesCompleted()', '''        if !ngNonblockingRendering {
-            waitForGPUCompletion()
-            markAllFramesCompleted()
-        }''')
-    s = replace(s, 'set { frameCounterLock.withLock { _lastCompletedFrame = newValue } }',
-                'set { frameCounterLock.withLock { _lastCompletedFrame = max(_lastCompletedFrame, newValue) } }')
-    s = replace(s, '        guard framesInFlight < Self.maxFramesInFlight else { return }',
-                '        guard framesInFlight < (ngNonblockingRendering ? 2 : Self.maxFramesInFlight) else { return }')
-    s = replace(s, '        commandBuffer.encodeSignalEvent(frameEvent, value: frameValue)',
-                '        if !ngNonblockingRendering { commandBuffer.encodeSignalEvent(frameEvent, value: frameValue) }')
-    a = s.index('        frameEvent.notify(')
-    b = s.index('        commandBuffer.commit()', a)
-    s = s[:a]+'''        // Only pools and immutable per-frame references cross onto the completion queue.
-        let pool = texturePool
-        let surfaceCapture = viewLayerCapture
-        let surface = capturedSurface
-        let extra = frostTextures?.pooled ?? []
-        let recycle = { [weak self] in
-            pool.checkin(intermediateTexture1)
-            pool.checkin(intermediateTexture2)
-            for texture in extra { pool.checkin(texture) }
-            if let surface { surfaceCapture?.recycleSurface(surface) }
-            self?.lastCompletedFrame = frameValue
-        }
-        if ngNonblockingRendering {
-            // Completion also releases the slot when the GPU drops or fails a frame.
-            commandBuffer.addCompletedHandler { _ in recycle() }
-        } else {
-            frameEvent.notify(context.eventListener, atValue: frameValue) { _, _ in recycle() }
-        }
-
-'''+s[b:]
-    return s
-
-
-def motion_surface(s):
-    s = replace(s, '    var ngSelectionBackdrop = false', '''    var ngSelectionBackdrop = false
-    var ngNonblockingRendering = false
-    var ngFrostedPlatter = false''')
-    s = replace(s, '        renderer?.ngCaptureNotBefore = ngCaptureNotBefore\n        renderer?.configuration',
-                '        renderer?.ngCaptureNotBefore = ngCaptureNotBefore\n        renderer?.ngNonblockingRendering = ngNonblockingRendering\n        renderer?.configuration')
-    s = replace(s, '            fallbackView?.configure(with: configuration)\n            if oldValue.shape', '''            // The retained fallback is normally hidden. A drag should not
-            // rebuild its gradients and blur bookkeeping on each frame.
-            if let fallbackView, !fallbackView.isHidden { fallbackView.configure(with: configuration) }
-            if oldValue.shape''')
-    s = replace(s, '        fallbackView?.configure(with: configuration)\n        fallbackView?.updateForTraitCollection(traitCollection)',
-                '        fallbackView?.ngFrostedPlatter = ngFrostedPlatter\n        fallbackView?.configure(with: configuration)\n        fallbackView?.updateForTraitCollection(traitCollection)')
-    return replace(s, '            fallbackView?.isHidden = false\n            fallbackView?.configure(with: configuration)',
-                   '            fallbackView?.isHidden = false\n            fallbackView?.ngFrostedPlatter = ngFrostedPlatter\n            fallbackView?.configure(with: configuration)')
-
-
-def frosted_platter_fallback(s):
-    s = replace(s, '    private var lastConfiguration: TheseusConfiguration?',
-                '    var ngFrostedPlatter = false\n\n    private var lastConfiguration: TheseusConfiguration?')
-    return replace(s, '        blurView.effect = UIBlurEffect(style: Self.thinBlurStyle(isDark: isDark))', '''        let style: UIBlurEffect.Style = ngFrostedPlatter ? (isDark ? .systemMaterialDark : .systemMaterialLight)
-            : Self.thinBlurStyle(isDark: isDark)
-        blurView.alpha = ngFrostedPlatter ? 1 : 0.7
-        blurView.effect = UIBlurEffect(style: style)''')
-
-
-def opaque_selection_tab(s):
-    s = replace(s, '''            selectionView.ngOpaqueBackdrop = ngUseHostPosition
-            selectionView.ngSelectionBackdrop = ngUseHostPosition''',
-                '            if ngUseHostPosition { selectionView.ngEnableSolidSelection() }')
-    s = replace(s, '        selectionView.ngPrepareReplacement()',
-                '        if !ngUseHostPosition { selectionView.ngPrepareReplacement() }')
-    s = replace(s, '''    private func ngInvalidatePageFrames(selectionDelay: TimeInterval = 0) {
-        backgroundGlassView.ngInvalidateBackdrop(after: 0)
-        selectionView.ngInvalidateBackdrop(after: selectionDelay)''', '''    private func ngInvalidatePageFrames() {
-        backgroundGlassView.ngInvalidateBackdrop(after: 0)''')
-    s = replace(s, 'ngInvalidatePageFrames(selectionDelay: TheseusSettings.shared.areMorphAnimationsEnabled ? 0.22 : 0)',
-                'ngInvalidatePageFrames()')
-    s = replace(s, '            selectionView.sourceView = source',
-                '            if !ngUseHostPosition { selectionView.sourceView = source }')
-    return replace(s, '                if self.selectionView.sourceView == nil {',
-                   '                if !self.ngUseHostPosition, self.selectionView.sourceView == nil {')
-
-
-def opaque_selection_surface(s):
-    s = replace(s, '    var ngSelectionBackdrop = false', '''    private var ngSolidSelection = false
-
-    // Hosted selection is an opaque tint, not another capture of the page.
-    // Keep this same view so the pill geometry and motion do not change.
-    func ngEnableSolidSelection() {
-        guard !ngSolidSelection else { return }
-        ngSolidSelection = true
-        ngBackdropEpoch &+= 1
-        ngWaitingForPresent = false
-        renderer?.stopRendering()
-        renderer = nil
-        providesCaptureSnapshot = false
-        captureSnapshotOverride = nil
-        sourceView = nil
-        fallbackView?.isHidden = true
-        ngSwitchCover?.isHidden = true
-        metalLayerView?.isHidden = true
-        ngUpdateSolidSelection()
-    }
-
-    private func ngUpdateSolidSelection() {
-        let tone: CGFloat = traitCollection.userInterfaceStyle == .dark ? 0.26 : 0.88
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        backgroundColor = UIColor(white: tone, alpha: 1)
-        layer.cornerRadius = shape.cornerRadius
-        CATransaction.commit()
-    }
-'''.rstrip('\n'))
-    s = replace(s, 'let neutral: CGFloat = ngSelectionBackdrop ? (dark ? 0.26 : 0.88) : (dark ? 0.18 : 0.96)',
-                'let neutral: CGFloat = dark ? 0.18 : 0.96')
-    s = replace(s, '        didSet {\n            renderer?.updateConfiguration(configuration)',
-                '        didSet {\n            if ngSolidSelection { ngUpdateSolidSelection(); return }\n            renderer?.updateConfiguration(configuration)')
-    s = replace(s, '    var renderedCenterColor: UIColor? {\n        guard let snapshot',
-                '    var renderedCenterColor: UIColor? {\n        if ngSolidSelection { return backgroundColor }\n        guard let snapshot')
-    # Let lens captures draw the solid fill normally; never substitute a live page image.
-    s = replace(s, 'var captureMetalHost: UIView? { metalLayerView }',
-                'var captureMetalHost: UIView? { ngSolidSelection ? nil : metalLayerView }')
-    for signature in ('func ngInvalidateBackdrop(after delay: TimeInterval)',
-                      'func ngPrepareReplacement()', 'private func setupRenderer()',
-                      'private func updateRenderingMode()'):
-        line = '    ' + signature + ' {\n'
-        s = replace(s, line, line + '        guard !ngSolidSelection else { return }\n')
-    return replace(s, '        super.traitCollectionDidChange(previousTraitCollection)\n        fallbackView?',
-                   '        super.traitCollectionDidChange(previousTraitCollection)\n        if ngSolidSelection { ngUpdateSolidSelection(); return }\n        fallbackView?')
-
-
 def stage(dst):
     verify_vendor()
-    def adapted_tab(s):
-        s = opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s))))
-        s = stability.appearance_tab(stability.drag_tab(s, replace), replace)
-        s = hosted_appearance.tab(hosted_motion.tab(s, replace), replace)
-        s = capsule_policy.tab(hosted_compositor.tab(s, replace), replace)
-        return platter_edges.tab(s, replace)
-
-    def adapted_renderer(s):
-        s = nonblocking_lens_renderer(renderer_frame_policy(renderer(s)))
-        s = stability.appearance_renderer(stability.drag_renderer(s, replace), replace)
-        s = hosted_appearance.renderer(hosted_motion.renderer(s, replace), replace)
-        return capsule_policy.renderer(s, replace)
-
-    def adapted_surface(s):
-        s = opaque_selection_surface(motion_surface(surface_frame_policy(surface(s))))
-        s = stability.appearance_surface(s, replace)
-        s = hosted_appearance.surface(hosted_motion.surface(s, replace), replace)
-        return capsule_policy.surface(s, replace)
-
-    def adapted_capture(s, rect):
-        s = stability.bounded_capture(opaque_capture(s, rect), replace)
-        return capsule_policy.capture(s, rect, replace)
-
-    patches = {'TheseusTabBar.swift':adapted_tab,
-               'TheseusRenderer.swift':adapted_renderer,
-               'TheseusView.swift':adapted_surface,
-               'VisualEffectFallback.swift':lambda s: capsule_policy.fallback(frosted_platter_fallback(s), replace),
-               'CaptureCompensation.swift':lambda s: stability.bounded_compensation(compensation(s), replace),
-               'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
-               'ViewLayerCapture.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
+    patches = {'TheseusTabBar.swift':lambda s: tab_frame_policy(tabbar(s)),
+               'TheseusRenderer.swift':lambda s: renderer_frame_policy(renderer(s)),
+               'TheseusView.swift':lambda s: surface_frame_policy(surface(s)),
+               'CaptureCompensation.swift':compensation,
+               'BackgroundCaptureDraw.swift':lambda s: opaque_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
+               'ViewLayerCapture.swift':lambda s: opaque_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
     dst.mkdir(parents=True,exist_ok=True)
     for p in sorted((VENDOR/'Sources/Theseus').rglob('*.swift')):
         s = p.read_text()
