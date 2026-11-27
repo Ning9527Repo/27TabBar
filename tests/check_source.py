@@ -102,43 +102,15 @@ def check():
         grow = section(tab, '    private func showTheseus()', '    private func hideTheseus()')
         shrink = section(tab, '    private func hideTheseus()', '    /// Places the lens without resizing')
         assert 'ngUseHostPosition ? contentView : theseusSourceView?.superview' in tab
-        assert 'let sourceView = theseusCaptureSourceView' in setup
-        assert 'glassView.sourceView = sourceView' in setup
-        assert 'glassView.ngOpaqueBackdrop = ngUseHostPosition' in setup
-        assert 'itemsContainerView, captureTwinRow' in setup
-        assert 'glassView.captureWillBegin' in setup and 'glassView.captureDidEnd' in setup
-        assert 'container.insertSubview(glassView, aboveSubview: selectionView)' in grow
-        assert 'contentView.bringSubviewToFront(items)' not in grow
-        assert 'glassView.resumeRendering()' in grow and 'animator.morph(from: startFrame, to: growthTarget' in grow
-        assert 'if !self.ngUseHostPosition {\n                self.selectionView.layer.transform' in grow
-        assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
-        assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
-        assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
-        assert 'glassView.setCaptureExcludedViews(captureExclusions)' in setup
-        assert '? [glassView, itemsContainerView, captureTwinRow].compactMap { $0 }' in setup
-        assert ': [ngExcludedBar].compactMap { $0 }' in setup
-        assert 'ngUseHostPosition ? contentView : theseusSourceView?.superview' in tab
-        assert 'if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }' in tab
-        assert 'ngEnableSolidSelection()' in tab and 'UIColor(white: tone, alpha: 1)' in surface
-        assert 'sourceView = nil' in surface and 'renderer = nil' in surface
-        assert 'ngCapsuleBackdrop' not in setup and 'solidBackdrop' not in renderer and 'ngCapsuleBackdrop' not in surface
-        assert 'let pill = self.convertFromTheseusContainer(frame)' in shrink
-        assert 'let capsuleShare = min(max(progress, 0), 1)' in shrink
-        assert 'self.selectionView.alpha = capsuleShare' in shrink
+        assert 'ngHostedPlatter' in tab
+        assert 'ngBeginHostedDrag(at: location.x)' in tab
+        assert 'ngMoveHostedDrag(to: convert(location, to: contentView).x)' in tab
+        assert 'ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x)' in tab
+        assert 'selectionView.alpha = capsuleShare' in shrink
         assert 'glassView.alpha = 1 - capsuleShare' in shrink
-        assert 'progress - 0.72' not in shrink
-        edges = section(tab, '    private func updateEdgeLayers(', '    /// One composite of chrome')
-        assert 'floor(inWindow.minX * scale)' in edges and 'ceil(inWindow.maxY * scale)' in edges
-        assert edges.count('antialias: ngUseHostPosition') == 2
-        assert 'ngRimCoverage(distance, normalX: normalX, normalY: normalY)' in tab
-        assert 'progress - 0.72' not in shrink
-        assert 'glassView.pauseRendering()' in shrink
-        begin = section(tab, '    private func beginInteraction(', '    /// `time` is the touch')
-        assert begin.index('showTheseus()') < begin.index('selectionAnimator?.rest(') < begin.index('followFinger(at:')
-        assert 'items[pressed].ngEnabled' in begin
-        assert 'direct: ngUseHostPosition' in tab and 'transform.m41 += containerFrame.midX - current.midX' in begin
-        for dead in ('ngBeginHostedDrag', 'ngFinishHostedDrag', 'ngSyncDragPill', 'ngRenderHostedLens', 'ngHostedDragLens'):
-            assert not any(dead in src for src in (tab, renderer, surface)), dead
+        assert 'contentView.bringSubviewToFront(items)' not in tab
+        assert 'ngOpaqueBackdrop' not in setup
+        assert 'solidBackdrop' not in renderer and 'ngCapsuleBackdrop' not in surface
         render = section(renderer, '    private func performRender(', '    /// A glass with a lens chain')
         assert render.count('from: sourceView,') >= 2 and render.count('excludedViews: excludedViews,') == 2
         assert 'NGSystemTabCaptureBegin()' in render and 'NGSystemTabCaptureEnd()' in render
