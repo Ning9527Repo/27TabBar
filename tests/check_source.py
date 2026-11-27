@@ -101,7 +101,7 @@ def check():
         assert 'glassView.alpha = 1 - share' in shrink
         setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
         assert 'glassView.ngHostedDragLens = false' in setup
-        assert 'glassView.setCaptureExcludedViews([backgroundView, selectionView, captureTwinRow].compactMap { $0 })' in setup
+        assert 'glassView.setCaptureExcludedViews([backgroundView, selectionView, itemsContainerView, captureTwinRow].compactMap { $0 })' in setup
         assert 'glassView.ngOpaqueBackdrop = false' in setup
         assert 'if !ngUseHostPosition {' in setup and 'captureItemLayer' in setup
         assert 'captureItemLayer' in setup.split('if !ngUseHostPosition {', 1)[1]
