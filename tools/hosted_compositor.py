@@ -249,8 +249,12 @@ def tab(s, rep):
                 'showsSelectedIcon: isSelected && (ngUseHostPosition || !isDragging),')
     s = rep(s, '    private func updateTheseusFrame() {\n',
                 '    private func updateTheseusFrame() {\n        guard !ngUseHostPosition else { return }\n')
-    s = rep(s, '    private func setupTheseus() {\n',
-                '    private func setupTheseus() {\n        guard !ngUseHostPosition else { return }\n')
+    s = rep(s, '    private func setupTheseus() {\n', '    private func setupTheseus() {\n')
+    s = rep(s, '        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }', '''        glassView.ngNonblockingRendering = ngUseHostPosition
+        glassView.ngOpaqueBackdrop = ngUseHostPosition
+        if ngUseHostPosition {
+            glassView.setCaptureExcludedViews([backgroundView, selectionView, itemsContainerView, captureTwinRow].compactMap { $0 })
+        } else if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }''')
     s = rep(s, '    private func endDragImmediately() {\n',
                 '    private func endDragImmediately() {\n        if ngUseHostPosition { ngCancelHostedDrag(); return }\n')
     s = rep(s, '    private func applyBarTransform() {\n',
@@ -264,12 +268,6 @@ def tab(s, rep):
             return
         }
 ''')
-    s = rep(s, '    private func beginInteraction(at location: CGPoint, rawX: CGFloat, time: TimeInterval = CACurrentMediaTime()) {\n',
-                '    private func beginInteraction(at location: CGPoint, rawX: CGFloat, time: TimeInterval = CACurrentMediaTime()) {\n        if ngUseHostPosition { ngBeginHostedDrag(at: location.x); return }\n')
-    s = rep(s, '    private func followFinger(at location: CGPoint, time: TimeInterval = CACurrentMediaTime()) {\n',
-                '    private func followFinger(at location: CGPoint, time: TimeInterval = CACurrentMediaTime()) {\n        if ngUseHostPosition { ngMoveHostedDrag(to: convert(location, to: contentView).x); return }\n')
-    s = rep(s, '    private func finishInteraction(rawX: CGFloat) {\n',
-                '    private func finishInteraction(rawX: CGFloat) {\n        if ngUseHostPosition { ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x); return }\n')
     return rep(s, '''        super.didMoveToWindow()
         if window == nil {
             teardownTheseus()''', '''        super.didMoveToWindow()

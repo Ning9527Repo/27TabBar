@@ -176,17 +176,41 @@ def renderer(s, rep):
     var ngBackdropHeld = false
     var ngHostedDragLens = false
 
-    private lazy var ngLightLensBackdrop = ngMakeLensBackdrop(236)
-    private lazy var ngDarkLensBackdrop = ngMakeLensBackdrop(65)
+    private lazy var ngLightLensBackdrop = ngMakeLensBackdrop(dark: false)
+    private lazy var ngDarkLensBackdrop = ngMakeLensBackdrop(dark: true)
 
-    private func ngMakeLensBackdrop(_ tone: UInt8) -> MTLTexture? {
+    private func ngMakeLensBackdrop(dark: Bool) -> MTLTexture? {
+        let width = 192
+        let height = 96
         let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
-                                                            width: 1, height: 1, mipmapped: false)
+                                                            width: width, height: height, mipmapped: false)
         desc.usage = .shaderRead
         desc.storageMode = .shared
         guard let texture = context.device.makeTexture(descriptor: desc) else { return nil }
-        var pixel = UInt32(tone) * 0x00010101 | 0xff000000
-        texture.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &pixel, bytesPerRow: 4)
+        var pixels = [UInt32](repeating: 0xff000000, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                let u = Float(x) / Float(width - 1)
+                let v = Float(y) / Float(height - 1)
+                let base = dark ? SIMD3<Float>(0.16, 0.20, 0.25) : SIMD3<Float>(0.70, 0.80, 0.90)
+                let cool = SIMD3<Float>(0.24, 0.56, 0.74)
+                let highlight = SIMD3<Float>(0.98, 0.99, 1.0)
+                let g1 = exp(-((u - 0.22) * (u - 0.22) / 0.07 + (v - 0.10) * (v - 0.10) / 0.24))
+                let g2 = exp(-((u - 0.84) * (u - 0.84) / 0.19 + (v - 0.92) * (v - 0.92) / 0.28))
+                let edge = 0.90 + 0.10 * sin(u * .pi)
+                let c = base * (1 - 0.16 * u) + cool * (0.32 * g1) + highlight * (0.30 * g2)
+                let r = UInt32(min(255, max(0, c.x * edge * 255)))
+                let g = UInt32(min(255, max(0, c.y * edge * 255)))
+                let b = UInt32(min(255, max(0, c.z * edge * 255)))
+                pixels[y * width + x] = 0xff000000 | (r << 16) | (g << 8) | b
+            }
+        }
+        pixels.withUnsafeBytes { bytes in
+            if let base = bytes.baseAddress {
+                texture.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0,
+                                withBytes: base, bytesPerRow: width * 4)
+            }
+        }
         return texture
     }
 

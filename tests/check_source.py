@@ -100,24 +100,21 @@ def check():
         assert 'selectionView.alpha = 1' in shrink and 'self.ngSyncDragPill(glassView)' in shrink
         assert 'glassView.alpha = 1 - share' in shrink
         setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
-        assert 'let sourceView = ngUseHostPosition ? self : theseusSourceView' in setup
         assert 'glassView.ngHostedDragLens = ngUseHostPosition' in setup
-        assert 'if !ngUseHostPosition, let sourceView = theseusSourceView' in tab
-        assert 'guard sourceView === self, let row = itemsContainerView else { return }' in tab
-        # Hosted press, pan, release and cancellation bypass the renderer entirely.
-        drag = section(tab, '    private func ngBeginHostedDrag(', '    private func ngTrackedLensFrame(')
-        for forbidden in ('showTheseus()', 'applyBarTransform()', 'setBarLifted(', 'captureTwin', 'contentView.transform', 'selectionView.alpha'):
-            assert forbidden not in drag, forbidden
-        assert 'backgroundGlassView.ngHoldBackdrop(ngHostIsInteracting)' not in tab
-        assert 'if ngUseHostPosition { ngBeginHostedDrag(at: location.x); return }' in tab
-        assert 'if ngUseHostPosition { ngMoveHostedDrag(to: convert(location, to: contentView).x); return }' in tab
-        assert 'if ngUseHostPosition { ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x); return }' in tab
-        assert 'if ngUseHostPosition { ngCancelHostedDrag(); return }' in tab
-        assert 'guard !ngUseHostPosition else { return }' in setup
-        assert 'ngActivateNative?(target)' in drag and 'ngGestureGate.clear()' in drag
-        cancel = drag.split('    private func ngCancelHostedDrag(', 1)[1]
-        assert 'ngActivateNative?' not in cancel and 'ngPlaceHostedPill(selectionFrame(for: slotFrames[selectedIndex]))' in cancel
-        assert 'ngPlaceHostedPill(landing)' in drag and 'pillShadeLayer.removeFromSuperlayer()' in hosted
+        assert 'glassView.setCaptureExcludedViews([backgroundView, selectionView, itemsContainerView, captureTwinRow].compactMap { $0 })' in setup
+        assert 'if ngUseHostPosition { ngBeginHostedDrag(at: location.x); return }' not in tab
+        assert 'if ngUseHostPosition { ngMoveHostedDrag(to: convert(location, to: contentView).x); return }' not in tab
+        assert 'if ngUseHostPosition { ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x); return }' not in tab
+        # Hosted long-press keeps the original real Theseus grow/follow/shrink path.
+        assert 'private func beginInteraction(at location:' in tab
+        assert 'showTheseus()' in tab and 'hideTheseus()' in tab
+        assert 'animator.morph(from: startFrame, to: growthTarget' in section(tab, '    private func showTheseus()', '    private func hideTheseus()')
+        assert 'glassView.ngHostedDragLens = ngUseHostPosition' in setup
+        assert 'let base = dark ? SIMD3<Float>(0.16, 0.20, 0.25) : SIMD3<Float>(0.70, 0.80, 0.90)' in renderer
+        assert 'let highlight = SIMD3<Float>(0.98, 0.99, 1.0)' in renderer
+        assert 'ngBeginHostedDrag(at: location.x)' not in tab
+        assert 'ngMoveHostedDrag(to: convert(location, to: contentView).x)' not in tab
+        assert 'ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x)' not in tab
         assert '!isShuttingDown, !ngBackdropHeld' in renderer
         fast = section(renderer, '    private func ngRenderHostedLens(', '    // CAMetalLayer acquisition')
         assert 'originalSourceTexture: plate' in fast and 'itemTexture: items' in fast
