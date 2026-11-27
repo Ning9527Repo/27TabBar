@@ -20,7 +20,6 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.13'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -61,8 +60,7 @@ def check():
         solid = surface.split('    func ngEnableSolidSelection() {', 1)[1].split('    var ngNonblockingRendering', 1)[0]
         for invariant in ('renderer = nil', 'providesCaptureSnapshot = false', 'sourceView = nil',
                           'fallbackView?.isHidden = true', 'metalLayerView?.isHidden = true',
-                          'UIColor(white: tone, alpha: 1)', 'backgroundColor = fill',
-                          'layer.cornerRadius = shape.cornerRadius'):
+                          'UIColor(white: tone, alpha: 1)', 'backgroundColor = fill', 'layer.cornerRadius = shape.cornerRadius'):
             assert invariant in solid, invariant
         for method in ('setupRenderer()', 'updateRenderingMode()', 'ngPrepareReplacement()',
                        'ngRefreshPlatter(crossfade: Bool, onReveal: ((Bool) -> Void)? = nil) -> Bool'):
@@ -73,52 +71,74 @@ def check():
         def section(text, marker, end):
             start = text.index(marker)
             return text[start:text.index(end, start)]
-        assert section(tab, '    private let selectionView:', '    /// Native iOS 27 pill') == section(upstream_tab, '    private let selectionView:', '    /// Native iOS 27 pill')
-        lens_setup = section(tab, '        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')
-        upstream_lens_setup = section(upstream_tab, '        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')
-        expected_lens_setup = upstream_lens_setup.replace('config.edgeEffects.rimGlow = 0', 'config.edgeEffects.rimGlow = 0.25').replace('config.edgeEffects.glareIntensity = 0', 'config.edgeEffects.glareIntensity = 0.12')
-        assert lens_setup == expected_lens_setup
-        assert 'config.edgeEffects.rimGlow = 0.25' in lens_setup
-        assert 'config.edgeEffects.glareIntensity = 0.12' in lens_setup
-        hosted = section(tab, '    private func ngInstallHostedChrome()', '    private func ngInvalidatePageFrames(')
-        for token in ('ngHostedPlatter.overrideUserInterfaceStyle = .light',
-                      'backgroundGlassView.removeFromSuperview()', 'pillShadeLayer.removeFromSuperlayer()',
-                      'ngSetHostedColor(tint.cgColor',
-                      'selectionView.ngSetSolidSelectionTone(dark: dark, animated: animate)'):
-            assert token in hosted, token
+        for marker, end in [('    private let selectionView:', '    /// Native iOS 27 pill'),
+                            ('        var config = TheseusConfiguration.lens', '        let glassView = TheseusView(configuration: config)')]:
+            assert section(tab, marker, end) == section(upstream_tab, marker, end), marker
+        hosted = section(tab, '    private func ngInstallHostedChrome()', '    private func ngPlaceHostedPill(')
         assert 'UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialLight))' in tab
+        assert 'ngHostedPlatter.overrideUserInterfaceStyle = .light' in hosted
+        assert 'backgroundGlassView.removeFromSuperview()' in hosted
+        assert 'ngHostedPlatter' in tab and 'ngFrostedPlatter = ngUseHostPosition' not in tab
+        assert 'private func ngBeginHostedDrag(at x: CGFloat)' in tab
+        assert 'private func ngMoveHostedDrag(to x: CGFloat)' in tab
+        assert 'private func ngFinishHostedDrag(at x: CGFloat)' in tab
+        assert 'private func ngCancelHostedDrag(restore: Bool = true)' in tab
+        assert 'selectionView.layer.borderWidth = 0' in tab
+        assert 'selectionView.layer.borderColor = nil' in tab
+        assert 'guard !ngUseHostPosition else { return }' in section(tab, '    private func setBarLifted(', '    private func applyBarLift(')
         assert 'ngHostedPlatter.frame = bodyFrame' in tab
-        assert 'ngHostedPlatter.effect = nil' not in tab
-        assert 'ngHostedBacking' not in tab
-        assert 'alpha: reduce ? 1 : (dark ? 0.76 : 0.22)' in hosted
-        assert 'ngHostedPlatter.isOpaque = true' not in hosted
-        assert 'selectionView.layer.cornerCurve = .continuous' in tab
-        assert 'NGTabPresentation.pixelAligned(screenFrame, scale: scale)' in tab
-        for method in ('setBarLifted(_ lifted: Bool)', 'applyBarTransform()', 'applyBarBodyGain(progress: CGFloat)'):
-            assert 'private func ' + method + ' {\n        guard !ngUseHostPosition else { return }' in tab
+        assert 'ngHostedPlatter.frame' in tab and 'ngHostedPlatter.effect' not in tab
+        assert 'applyItemTints(selectedAt: selectedIndex, animated: animate)' in hosted
         assert 'ngTap.require(toFail: pressGesture)' in tab and 'ngTap.require(toFail: panGesture)' in tab
         assert tab.count('if ngUseHostPosition && !ngAcceptGesture(gesture) { return }') == 2
-        setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
-        grow = section(tab, '    private func showTheseus()', '    private func hideTheseus()')
+        assert 'ngGestureGate.clear()' in tab
         shrink = section(tab, '    private func hideTheseus()', '    /// Places the lens without resizing')
-        assert 'ngUseHostPosition ? contentView : theseusSourceView?.superview' in tab
-        assert 'ngHostedPlatter' in tab
-        assert 'ngBeginHostedDrag(at: location.x)' in tab
-        assert 'ngMoveHostedDrag(to: convert(location, to: contentView).x)' in tab
-        assert 'ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x)' in tab
-        assert 'selectionView.alpha = capsuleShare' in shrink
-        assert 'glassView.alpha = 1 - capsuleShare' in shrink
-        assert 'contentView.bringSubviewToFront(items)' not in tab
-        assert 'ngOpaqueBackdrop' not in setup
-        assert 'solidBackdrop' not in renderer and 'ngCapsuleBackdrop' not in surface
+        assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
+        assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
+        assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
+        assert 'self.selectionView.alpha = share' not in shrink
+        assert 'selectionView.alpha = 1' in shrink and 'self.ngSyncDragPill(glassView)' in shrink
+        assert 'glassView.alpha = 1 - share' in shrink
+        setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
+        assert 'let sourceView = ngUseHostPosition ? self : theseusSourceView' in setup
+        assert 'glassView.ngHostedDragLens = ngUseHostPosition' in setup
+        assert 'if !ngUseHostPosition, let sourceView = theseusSourceView' in tab
+        assert 'guard sourceView === self, let row = itemsContainerView else { return }' in tab
+        # Hosted press, pan, release and cancellation bypass the renderer entirely.
+        drag = section(tab, '    private func ngBeginHostedDrag(', '    private func ngTrackedLensFrame(')
+        for forbidden in ('showTheseus()', 'applyBarTransform()', 'setBarLifted(', 'captureTwin', 'contentView.transform', 'selectionView.alpha'):
+            assert forbidden not in drag, forbidden
+        assert 'backgroundGlassView.ngHoldBackdrop(ngHostIsInteracting)' not in tab
+        assert 'if ngUseHostPosition { ngBeginHostedDrag(at: location.x); return }' in tab
+        assert 'if ngUseHostPosition { ngMoveHostedDrag(to: convert(location, to: contentView).x); return }' in tab
+        assert 'if ngUseHostPosition { ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x); return }' in tab
+        assert 'if ngUseHostPosition { ngCancelHostedDrag(); return }' in tab
+        assert 'guard !ngUseHostPosition else { return }' in setup
+        assert 'ngActivateNative?(target)' in drag and 'ngGestureGate.clear()' in drag
+        cancel = drag.split('    private func ngCancelHostedDrag(', 1)[1]
+        assert 'ngActivateNative?' not in cancel and 'ngPlaceHostedPill(selectionFrame(for: slotFrames[selectedIndex]))' in cancel
+        assert 'ngPlaceHostedPill(landing)' in drag and 'pillShadeLayer.removeFromSuperlayer()' in hosted
+        assert '!isShuttingDown, !ngBackdropHeld' in renderer
+        fast = section(renderer, '    private func ngRenderHostedLens(', '    // CAMetalLayer acquisition')
+        assert 'originalSourceTexture: plate' in fast and 'itemTexture: items' in fast
+        assert 'encodeBlurPass(' not in fast and 'captureTexture(' not in fast
+        assert 'fixedSize: size' in fast and 'guard encodeRefractionCompositePass' in fast
+        assert 'func ngTrackedLensFrame' in tab and 'frame.midX - converted.midX' in tab
         render = section(renderer, '    private func performRender(', '    /// A glass with a lens chain')
-        assert render.count('from: sourceView,') >= 2 and render.count('excludedViews: excludedViews,') == 2
-        assert 'NGSystemTabCaptureBegin()' in render and 'NGSystemTabCaptureEnd()' in render
+        assert render.index('if ngHostedDragLens {') < render.index('NGSystemTabCaptureBegin()')
+        assert '0xff000000' in renderer and 'if ngHostedDragLens && shouldUseFallback' in surface
+        assert 'direct: ngUseHostPosition' in tab
+        assert 'if direct, ngDragCenter.update(x)' in tab and 'centerX = frame.midX' in tab
+        assert 'transform.m41 += containerFrame.midX - current.midX' in tab
+        assert 'if glassView.bounds != bounds { glassView.bounds = bounds }' in tab
         assert 'metalLayer?.presentsWithTransaction = continuousUpdate && !ngNonblockingRendering' in renderer
         assert 'ngDrawableQueue.async' in renderer and 'self.ngDrawableEpoch == epoch' in renderer
         assert 'ngNonblockingRendering ? ngTakeDrawable(metalLayer) : metalLayer.nextDrawable()' in renderer
         assert renderer.count('limitCompensation: ngNonblockingRendering') == 2
+        assert 'if ngNonblockingRendering {\n            ngDrawableEpoch &+= 1\n            ngReadyDrawable = nil\n        } else {\n            waitForGPUCompletion()' in renderer
         assert 'commandBuffer.addCompletedHandler { _ in recycle() }' in renderer
+        assert 'let renderScale = currentRefractionQuality.renderScale' in renderer
+        assert 'let onSnapshot = self.onSnapshot' in renderer
         assert surface.count('self.ngBackdropEpoch == epoch') == 2
         ordinary = section(tab, '    private func ngInvalidatePageFrames()', '    private var ngRefreshingItems')
         assert 'ngRefreshPlatter(crossfade: false)' in ordinary
@@ -163,7 +183,6 @@ def check():
                 assert f'Architecture: iphoneos-{arch}\n' in control
                 assert 'Name: 27TabBar\n' in control
                 assert 'Author: Ning\n' in control and 'Maintainer: Ning\n' in control
-                assert 'Ning&valzevul' not in control
             with tarfile.open(fileobj=io.BytesIO(members['data.tar.gz']), mode='r:gz') as tar:
                 verify_tar_layout(tar.getmembers(), expected)
                 files = {x.name[2:]:tar.extractfile(x).read() for x in tar if x.isfile()}

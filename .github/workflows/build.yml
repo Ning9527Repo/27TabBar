@@ -14,7 +14,7 @@ permissions:
   contents: read
 jobs:
   package:
-    runs-on: macos-26-intel
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -24,8 +24,6 @@ jobs:
         run: python3 tests/test_replacement.py
       - name: Check hosted production gestures
         run: python3 tests/test_hosted_compositor.py
-      - name: Check platter rim antialiasing
-        run: python3 tests/test_platter_edges.py
       - name: Check Xcode Metal toolchain
         run: |
           xcodebuild -version

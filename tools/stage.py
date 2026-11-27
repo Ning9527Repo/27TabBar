@@ -7,7 +7,6 @@ import sys
 import hosted_appearance
 import hosted_compositor
 import hosted_motion
-import platter_edges
 import stability
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,28 +122,8 @@ def tabbar(s):
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
             return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: ngUseHostPosition ? barFrame.minY : 0, width: itemWidth, height: itemHeight)''')
-    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? contentView : theseusSourceView?.superview\n')
-    s = replace(s, '    private func setupTheseus() {\n        guard theseusView == nil else { return }\n        guard let container = theseusContainer,\n              let sourceView = theseusSourceView else { return }', '''    private var theseusCaptureSourceView: UIView? {
-        ngUseHostPosition ? contentView : theseusSourceView
-    }
-
-    private func setupTheseus() {
-        guard theseusView == nil else { return }
-        guard let container = theseusContainer,
-              let sourceView = theseusCaptureSourceView else { return }''')
-    s = replace(s, '''        config.refraction.magnificationCenterY = 0
-        config.refraction.intensity = 1.1
-        config.edgeEffects.rimGlow = 0
-        config.edgeEffects.glareIntensity = 0
-''', '''        config.refraction.magnificationCenterY = 0
-        config.refraction.intensity = 1.1
-        config.edgeEffects.rimGlow = 0.25
-        config.edgeEffects.glareIntensity = 0.12
-''')
-    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '''        glassView.sourceView = sourceView
-        glassView.ngNonblockingRendering = ngUseHostPosition
-        glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })
-        glassView.isHidden''')
+    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? self : theseusSourceView?.superview\n')
+    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }\n        glassView.isHidden')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)
         case .cancelled, .failed:
@@ -316,20 +295,7 @@ def tab_frame_policy(s):
         ngInvalidatePageFrames(selectionDelay: TheseusSettings.shared.areMorphAnimationsEnabled ? 0.22 : 0)
         selectedIndex = index''')
     s = replace(s, '            if isCollapsingLens, confirmed != selectedIndex { endDragImmediately() }\n            selectedIndex = confirmed', '            ngApplySelection(confirmed)')
-    s = replace(s, '        let frame = selectionFrame(for: slotFrame(at: selectedIndex))', '''        let rawFrame = selectionFrame(for: slotFrame(at: selectedIndex))
-        let frame: CGRect
-        if ngUseHostPosition, window != nil {
-            let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
-            let screenFrame = contentView.convert(rawFrame, to: nil)
-            frame = contentView.convert(NGTabPresentation.pixelAligned(screenFrame, scale: scale), from: nil)
-        } else {
-            frame = rawFrame
-        }''')
     s = replace(s, '        if selectionView.shape.cornerRadius != frame.height / 2 {\n            selectionView.shape.cornerRadius = frame.height / 2', '''        let radius = ngUseHostPosition ? min(frame.width, frame.height) / 2 : frame.height / 2
-        if ngUseHostPosition {
-            selectionView.layer.cornerCurve = .continuous
-            selectionView.layer.masksToBounds = true
-        }
         if selectionView.shape.cornerRadius != radius {
             selectionView.shape.cornerRadius = radius''')
     s = replace(s, '            pillShadeLayer.cornerRadius = size.height / 2',
@@ -528,6 +494,9 @@ def motion_policy(s):
         if !ngUseHostPosition || (!isDragging && !isCollapsingLens && lensMorphAnimator?.isRunning != true) {
             updateSelectionViewFrame(animated: false)
         }''')
+    s = replace(s, '        glassView.sourceView = sourceView\n        if let bar', '''        glassView.sourceView = sourceView
+        glassView.ngNonblockingRendering = ngUseHostPosition
+        if let bar''')
     s = replace(s, '        backgroundGlassView.configuration.refraction.interiorSharpness = isDark ? Self.chromeDetailDark : Self.chromeDetailLight',
                 '        backgroundGlassView.configuration.refraction.interiorSharpness = ngUseHostPosition ? 0 : (isDark ? Self.chromeDetailDark : Self.chromeDetailLight)')
     a = s.index('    private func applyBarBodyGain(')
@@ -617,13 +586,10 @@ def motion_policy(s):
         guard !releaseFrame.isEmpty, !animationBase.isEmpty else { endDragImmediately(); return }''')
     s = replace(s, '            glassView.layer.transform = LensMorph.transform(mapping: releaseFrame, onto: frame)', '''            glassView.layer.transform = LensMorph.transform(mapping: animationBase, onto: frame)
             if self.ngUseHostPosition {
-                let pill = self.convertFromTheseusContainer(frame)
-                self.selectionView.bounds = CGRect(origin: .zero, size: pill.size)
-                self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)
-                self.selectionView.shape.cornerRadius = pill.height / 2
-                let capsuleShare = min(max(progress, 0), 1)
-                self.selectionView.alpha = capsuleShare
-                glassView.alpha = 1 - capsuleShare
+                // The settled pill only takes over once the lens is near the target.
+                let share = min(max((progress - 0.72) / 0.28, 0), 1)
+                self.selectionView.alpha = share
+                glassView.alpha = 1 - share
             }''')
     s = replace(s, '            self.isCollapsingLens = false\n            self.selectionView.isHidden = false', '''            self.isCollapsingLens = false
             if self.ngUseHostPosition {
@@ -813,8 +779,7 @@ def stage(dst):
         s = opaque_selection_tab(motion_policy(tab_frame_policy(tabbar(s))))
         s = stability.appearance_tab(stability.drag_tab(s, replace), replace)
         s = hosted_appearance.tab(hosted_motion.tab(s, replace), replace)
-        s = hosted_compositor.tab(s, replace)
-        return platter_edges.tab(s, replace)
+        return hosted_compositor.tab(s, replace)
 
     def adapted_renderer(s):
         s = nonblocking_lens_renderer(renderer_frame_policy(renderer(s)))

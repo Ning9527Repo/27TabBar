@@ -178,9 +178,8 @@ def tab(s, rep):
         header = '    private func ' + signature + ' {\n'
         s = rep(s, header, header + '        guard !ngUseHostPosition else { return }\n')
     for state in ('isDragging: Bool', 'isCollapsingLens'):
-        old = f'    private var {state} = false {{\n        didSet {{ if oldValue != {state.split(":")[0]} {{ ngSyncPlatterHold() }} }}\n    }}'
-        if old in s:
-            s = s.replace(old, f'    private var {state} = false')
+        s = rep(s, f'    private var {state} = false {{\n        didSet {{ if oldValue != {state.split(":")[0]} {{ ngSyncPlatterHold() }} }}\n    }}',
+                f'    private var {state} = false')
     s = rep(s, '''            backgroundGlassView.ngFrostedPlatter = ngUseHostPosition
             var chrome = backgroundGlassView.configuration
             chrome.blur.radius = ngUseHostPosition ? 26 : 18
