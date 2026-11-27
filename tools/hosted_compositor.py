@@ -135,20 +135,24 @@ def tab(s, rep):
         }
         if window == nil {
             teardownTheseus()''')
-    # Both initial mounting and window reattachment use the same z-order.
+    # Keep the pill and live item row as separate layers above the lens.
     s = rep(s, '\n        container.addSubview(glassView)\n', '''
-        if ngUseHostPosition { container.insertSubview(glassView, aboveSubview: selectionView) }
-        else { container.addSubview(glassView) }
+        if ngUseHostPosition {
+            contentView.insertSubview(glassView, aboveSubview: selectionView)
+            if let items = itemsContainerView { contentView.bringSubviewToFront(items) }
+        } else { container.addSubview(glassView) }
 ''')
     s = rep(s, '\n            container.addSubview(glassView)\n', '''
-            if ngUseHostPosition { container.insertSubview(glassView, aboveSubview: selectionView) }
-            else { container.addSubview(glassView) }
+            if ngUseHostPosition {
+                contentView.insertSubview(glassView, aboveSubview: selectionView)
+                if let items = itemsContainerView { contentView.bringSubviewToFront(items) }
+            } else { container.addSubview(glassView) }
 ''')
     a = s.index('        glassView.captureWillBegin =')
     b = s.index('    private func showTheseus()', a)
     b = s.rindex('    }\n', a, b)
     callbacks = s[a:b]
-    s = s[:a] + '        if !ngUseHostPosition {\n' + ''.join('    '+line if line.strip() else line for line in callbacks.splitlines(keepends=True)) + '        }\n' + s[b:]
+    s = s[:a] + callbacks + s[b:]
     s = rep(s, '        guard !isDragging, isUserInteractionEnabled else { return }\n', '''        guard !isDragging, isUserInteractionEnabled else { return }
         if ngUseHostPosition {
             guard rawX.isFinite, slotFrames.indices.contains(selectedIndex) else { return }
@@ -176,4 +180,32 @@ def tab(s, rep):
             }''')
     s = rep(s, '                    if self.isPillFading, !self.selectionView.isHidden {',
             '                    if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {')
+    s = rep(s, '        fadePill(to: 0, spring: Self.pillFadeOutSpring)', '''        if ngUseHostPosition {
+            pillFadeDriver.stop()
+            isPillFading = false
+            selectionView.alpha = 1
+        } else {
+            fadePill(to: 0, spring: Self.pillFadeOutSpring)
+        }''')
+    s = rep(s, '        glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })', '''        glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })
+        if ngUseHostPosition {
+            var lensConfig = glassView.configuration
+            lensConfig.lensFill = 1
+            lensConfig.lensFillColor = UIColor(white: systemIsDark ? 0.26 : 0.88, alpha: 1)
+            glassView.configuration = lensConfig
+        }''')
+    s = rep(s, '''                    self.placeLens(at: containerFrame)
+                    if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {''', '''                    self.placeLens(at: containerFrame)
+                    if self.ngUseHostPosition {
+                        let pill = self.convertFromTheseusContainer(containerFrame)
+                        CATransaction.begin()
+                        CATransaction.setDisableActions(true)
+                        self.selectionView.bounds = CGRect(origin: .zero, size: pill.size)
+                        self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)
+                        self.selectionView.shape.cornerRadius = min(pill.width, pill.height) / 2
+                        self.selectionView.alpha = 1
+                        self.selectionView.isHidden = false
+                        CATransaction.commit()
+                    }
+                    if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {''')
     return s

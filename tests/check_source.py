@@ -101,23 +101,25 @@ def check():
         setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
         grow = section(tab, '    private func showTheseus()', '    private func hideTheseus()')
         shrink = section(tab, '    private func hideTheseus()', '    /// Places the lens without resizing')
-        assert 'ngUseHostPosition ? self : theseusSourceView?.superview' in tab
+        assert 'ngUseHostPosition ? contentView : theseusSourceView?.superview' in tab
         assert 'window?.rootViewController?.view' in tab
         assert 'let sourceView = theseusSourceView' in setup and 'glassView.sourceView = sourceView' in setup
         assert 'glassView.ngNonblockingRendering = ngUseHostPosition' in setup
         assert 'config.edgeEffects.rimGlow = 0.25' in setup
         assert 'config.edgeEffects.glareIntensity = 0.12' in setup
         assert 'glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })' in setup
-        assert 'if !ngUseHostPosition {\n            glassView.captureWillBegin' in setup
+        assert 'glassView.captureWillBegin' in setup and 'glassView.captureDidEnd' in setup
+        assert 'lensConfig.lensFill = 1' in setup
         for phase in (setup, grow):
-            assert 'container.insertSubview(glassView, aboveSubview: selectionView)' in phase
+            assert 'contentView.insertSubview(glassView, aboveSubview: selectionView)' in phase
+        assert 'self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)' in tab
         assert 'glassView.resumeRendering()' in grow and 'animator.morph(from: startFrame, to: growthTarget' in grow
         assert 'if !self.ngUseHostPosition {\n                self.selectionView.layer.transform' in grow
         assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
         assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
         assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
         assert 'glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })' in setup
-        assert 'ngUseHostPosition ? self : theseusSourceView?.superview' in tab
+        assert 'ngUseHostPosition ? contentView : theseusSourceView?.superview' in tab
         assert 'if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }' in tab
         assert 'ngEnableSolidSelection()' in tab and 'UIColor(white: tone, alpha: 1)' in surface
         assert 'sourceView = nil' in surface and 'renderer = nil' in surface
