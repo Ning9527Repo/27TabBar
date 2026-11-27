@@ -201,13 +201,16 @@ def renderer(s):
     s = replace(s, '        let viewFrame = metalLayer.frame\n', '        let viewFrame = hostView?.bounds ?? metalLayer.frame\n')
     s = replace(s, '              let superlayer = metalLayer.superlayer else {',
                 '              let superlayer = hostView?.layer ?? metalLayer.superlayer else {')
-    s = replace(s, '                    excludedViews: excludedViews\n', '''                    excludedViews: excludedViews,\n                    opaqueBackdrop: (hostView as? TheseusView)?.ngOpaqueBackdrop == true\n'''.rstrip('\n') + '\n', count=2)
+    s = replace(s, '                    excludedViews: excludedViews\n', '''                    excludedViews: excludedViews,\n                    opaqueBackdrop: (hostView as? TheseusView)?.ngOpaqueBackdrop == true,\n                    hierarchyCapture: (hostView as? TheseusView)?.ngHierarchyCapture == true\n'''.rstrip('\n') + '\n', count=2)
     s = replace(s, '        willCapture?()\n        defer { didCapture?() }', '        NGSystemTabCaptureBegin()\n        willCapture?()\n        defer { didCapture?(); NGSystemTabCaptureEnd() }')
     return replace(s, '            commandBuffer.addCompletedHandler { _ in\n                DispatchQueue.main.async(execute: onPresent)', '            commandBuffer.addCompletedHandler { buffer in\n                guard buffer.status == .completed else { return }\n                DispatchQueue.main.async(execute: onPresent)')
 
 
 def surface(s):
     s = replace(s, '    public var onPresent: (() -> Void)? {\n        didSet { renderer?.onPresent = onPresent }\n    }', '''    var ngOpaqueBackdrop = false
+    var ngHierarchyCapture = false {
+        didSet { renderer?.ngHierarchyCapture = ngHierarchyCapture }
+    }
     private var ngWaitingForPresent = false
     private var ngPresented = false
 
@@ -254,15 +257,18 @@ def surface(s):
     return replace(s, '        let paddingX = padding.x * scale\n', '        metalLayerView?.frame = bounds.insetBy(dx: -padding.x, dy: -padding.y)\n        let paddingX = padding.x * scale\n')
 
 
-def opaque_capture(s, rect):
+def opaque_capture(s, rect, context_already_pushed=False):
     s = replace(s, '        excludedViews: [UIView] = []\n',
-                '        excludedViews: [UIView] = [],\n        opaqueBackdrop: Bool = false\n')
+                '        excludedViews: [UIView] = [],\n        opaqueBackdrop: Bool = false,\n        hierarchyCapture: Bool = false\n')
     line = '        ctx.clear(' + rect + ')\n'
-    return replace(s, line, line + '''        if opaqueBackdrop {
+    s = replace(s, line, line + '''        if opaqueBackdrop {
             ctx.setFillColor(UIColor.systemBackground.resolvedColor(with: sourceView.traitCollection).cgColor)
             ctx.fill(''' + rect + ''')
         }
 ''')
+    drawing = ('            sourceView.drawHierarchy(in: sourceView.bounds, afterScreenUpdates: false)' if context_already_pushed else
+               '            UIGraphicsPushContext(ctx)\n            sourceView.drawHierarchy(in: sourceView.bounds, afterScreenUpdates: false)\n            UIGraphicsPopContext()')
+    return replace(s, '        sourceView.layer.render(in: ctx)', '        if hierarchyCapture {\n' + drawing + '\n        } else {\n            sourceView.layer.render(in: ctx)\n        }')
 
 
 def compensation(s):
@@ -416,6 +422,7 @@ def surface_frame_policy(s):
             self.captureSnapshot = image
             self.snapshotDidUpdate?()''')
     s = replace(s, '        renderer?.hostView = self\n        renderer?.configuration', '''        renderer?.hostView = self
+        renderer?.ngHierarchyCapture = ngHierarchyCapture
         renderer?.ngCaptureNotBefore = ngCaptureNotBefore
         renderer?.configuration''')
     return s
@@ -793,15 +800,15 @@ def stage(dst):
         s = stability.appearance_surface(s, replace)
         return hosted_appearance.surface(hosted_motion.surface(s, replace), replace)
 
-    def adapted_capture(s, rect):
-        return stability.bounded_capture(opaque_capture(s, rect), replace)
+    def adapted_capture(s, rect, context_already_pushed=False):
+        return stability.bounded_capture(opaque_capture(s, rect, context_already_pushed), replace)
 
     patches = {'TheseusTabBar.swift':adapted_tab,
                'TheseusRenderer.swift':adapted_renderer,
                'TheseusView.swift':adapted_surface,
                'VisualEffectFallback.swift':frosted_platter_fallback,
                'CaptureCompensation.swift':lambda s: stability.bounded_compensation(compensation(s), replace),
-               'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
+               'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)', True),
                'ViewLayerCapture.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
     dst.mkdir(parents=True,exist_ok=True)
     for p in sorted((VENDOR/'Sources/Theseus').rglob('*.swift')):

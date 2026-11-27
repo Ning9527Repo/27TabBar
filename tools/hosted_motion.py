@@ -39,7 +39,8 @@ def tab(s, rep):
               let sourceView = ngUseHostPosition ? self : theseusSourceView else { return }
 
         var config = TheseusConfiguration.lens''')
-    s = rep(s, '        glassView.ngNonblockingRendering = ngUseHostPosition', '''        glassView.ngNonblockingRendering = ngUseHostPosition
+    s = rep(s, '        glassView.ngNonblockingRendering = ngUseHostPosition', '''        glassView.ngHierarchyCapture = ngUseHostPosition
+        glassView.ngNonblockingRendering = ngUseHostPosition
         glassView.ngHostedDragLens = false
         config.edgeFeather = ngUseHostPosition ? 1.0 : TheseusTabBar.pillFeather''')
     s = rep(s, '''        glassView.captureWillBegin = { [weak self] in
@@ -50,12 +51,10 @@ def tab(s, rep):
         }
         glassView.captureItemLayer = { [weak self] context, sourceView in
             self?.drawLensItems(in: context, from: sourceView)
-        }''', '''        if !ngUseHostPosition {
-            glassView.captureWillBegin = { [weak self] in self?.showCaptureTint(true) }
-            glassView.captureDidEnd = { [weak self] in self?.showCaptureTint(false) }
-            glassView.captureItemLayer = { [weak self] context, sourceView in
-                self?.drawLensItems(in: context, from: sourceView)
-            }
+        }''', '''        glassView.captureWillBegin = { [weak self] in self?.showCaptureTint(true) }
+        glassView.captureDidEnd = { [weak self] in self?.showCaptureTint(false) }
+        glassView.captureItemLayer = { [weak self] context, sourceView in
+            self?.drawLensItems(in: context, from: sourceView)
         }''')
     s = rep(s, '        if let sourceView = theseusSourceView, sourceView.bounds.width > 0, glassView.sourceView !== sourceView {',
             '        if !ngUseHostPosition, let sourceView = theseusSourceView, sourceView.bounds.width > 0, glassView.sourceView !== sourceView {')
@@ -159,6 +158,7 @@ def tab(s, rep):
 
 def renderer(s, rep):
     s = rep(s, '    var ngNonblockingRendering = false', '''    var ngNonblockingRendering = false
+    var ngHierarchyCapture = false
     var ngBackdropHeld = false
     var ngHostedDragLens = false
 

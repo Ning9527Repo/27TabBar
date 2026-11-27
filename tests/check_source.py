@@ -100,11 +100,17 @@ def check():
         assert 'selectionView.alpha = 1' in shrink and 'self.ngSyncDragPill(glassView)' in shrink
         assert 'glassView.alpha = 1 - share' in shrink
         setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
-        assert 'glassView.ngHostedDragLens = false' in setup
-        assert 'glassView.setCaptureExcludedViews([backgroundView, selectionView, captureTwinRow].compactMap { $0 })' in setup
+        assert 'glassView.ngHierarchyCapture = ngUseHostPosition' in setup
+        assert 'glassView.setCaptureExcludedViews([captureTwinRow])' in setup
         assert 'glassView.ngOpaqueBackdrop = false' in setup
-        assert 'if !ngUseHostPosition {' in setup and 'captureItemLayer' in setup
-        assert 'captureItemLayer' in setup.split('if !ngUseHostPosition {', 1)[1]
+        assert 'drawLensItems(in: context, from: sourceView)' in setup
+        captureTint = section(tab, '    private func showCaptureTint(', '    private static func render(')
+        assert 'container.isHidden = true' in captureTint
+        assert 'captureTwinRow.frame = container.frame' in captureTint
+        drawItems = section(tab, '    private func drawLensItems(', '    private static func affineTransform(')
+        assert 'guard itemsHiddenForCapture else { return }' in drawItems
+        assert 'captureTwinView' in drawItems
+        assert 'backgroundView' not in setup.split('setCaptureExcludedViews', 1)[1]
         assert 'if ngUseHostPosition { ngBeginHostedDrag(at: location.x); return }' not in tab
         assert 'if ngUseHostPosition { ngMoveHostedDrag(to: convert(location, to: contentView).x); return }' not in tab
         assert 'if ngUseHostPosition { ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x); return }' not in tab
@@ -118,6 +124,10 @@ def check():
         assert 'if ngHostedDragLens {' not in render
         assert 'func ngTrackedLensFrame' in tab and 'frame.midX - converted.midX' in tab
         assert 'opaqueBackdrop: (hostView as? TheseusView)?.ngOpaqueBackdrop == true' in renderer
+        assert 'hierarchyCapture: (hostView as? TheseusView)?.ngHierarchyCapture == true' in renderer
+        capture_impl = (ROOT/'tools/stability.py').read_text()
+        assert 'hierarchyCapture ? [] : CaptureCompensation.begin' in capture_impl
+        assert 'sourceView.drawHierarchy(in: sourceView.bounds, afterScreenUpdates: false)' in (ROOT/'tools/stage.py').read_text()
         assert 'if ngHostedDragLens && shouldUseFallback' in surface
         assert 'glassView.ngHostedDragLens = false' in setup
         assert 'direct: ngUseHostPosition' in tab

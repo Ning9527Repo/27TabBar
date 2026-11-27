@@ -253,7 +253,7 @@ def tab(s, rep):
     s = rep(s, '        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }', '''        glassView.ngNonblockingRendering = ngUseHostPosition
         glassView.ngOpaqueBackdrop = false
         if ngUseHostPosition {
-            glassView.setCaptureExcludedViews([backgroundView, selectionView, captureTwinRow].compactMap { $0 })
+            glassView.setCaptureExcludedViews([captureTwinRow])
         } else if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }''')
     s = rep(s, '    private func endDragImmediately() {\n',
                 '    private func endDragImmediately() {\n        if ngUseHostPosition { ngCancelHostedDrag(); return }\n')
