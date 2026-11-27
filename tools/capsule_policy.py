@@ -85,48 +85,30 @@ def capture(s, rect, rep):
             ctx.fill(''' + rect + ''')
         }
 ''')
-    gradient = '''        if let solidBackdrop {
-            let components = solidBackdrop.components ?? [0.88, 0.88, 0.88, 1]
-            let baseRed = components.count >= 4 ? components[0] : components[0]
-            let baseGreen = components.count >= 4 ? components[1] : components[0]
-            let baseBlue = components.count >= 4 ? components[2] : components[0]
-            func neutralGlassColor(_ factor: CGFloat, _ bias: CGFloat) -> CGColor {
-                func clamp(_ value: CGFloat) -> CGFloat { min(max(value, 0), 1) }
-                return CGColor(red: clamp(baseRed * factor + bias),
-                               green: clamp(baseGreen * factor + bias),
-                               blue: clamp(baseBlue * factor + bias), alpha: 1)
-            }
-            let colors: [CGColor] = [
-                neutralGlassColor(0.965, 0),
-                neutralGlassColor(1.015, 0.006),
-                neutralGlassColor(0.975, 0.002)
-            ]
-            let locations: [CGFloat] = [0, 0.54, 1]
-            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                          colors: colors as CFArray, locations: locations) {
+    gradient = '''        if solidBackdrop != nil {
+            ctx.saveGState()
+            ctx.clip(to: region)
+            ctx.translateBy(x: region.minX, y: region.minY)
+            ctx.scaleBy(x: region.width, y: region.height)
+
+            func drawSoftbox(center: CGPoint, radii: CGSize, color: UIColor, alpha: CGFloat) {
+                guard let glow = CGGradient(
+                    colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                    colors: [color.withAlphaComponent(alpha).cgColor,
+                             color.withAlphaComponent(0).cgColor] as CFArray,
+                    locations: [0, 1]) else { return }
                 ctx.saveGState()
-                ctx.clip(to: region)
-                ctx.drawLinearGradient(gradient,
-                    start: CGPoint(x: region.minX, y: region.maxY),
-                    end: CGPoint(x: region.maxX, y: region.minY), options: [])
-                let highlight = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                    colors: [UIColor.white.withAlphaComponent(0.10).cgColor,
-                             UIColor.white.withAlphaComponent(0).cgColor] as CFArray,
-                    locations: [0, 1])
-                if let highlight {
-                    ctx.saveGState()
-                    ctx.translateBy(x: region.minX, y: region.minY)
-                    ctx.scaleBy(x: region.width, y: region.height)
-                    ctx.drawRadialGradient(highlight,
-                        startCenter: CGPoint(x: 0.27, y: 0.24), startRadius: 0.01,
-                        endCenter: CGPoint(x: 0.27, y: 0.24), endRadius: 0.70, options: [])
-                    ctx.restoreGState()
-                }
+                ctx.translateBy(x: center.x, y: center.y)
+                ctx.scaleBy(x: radii.width, y: radii.height)
+                ctx.drawRadialGradient(glow, startCenter: .zero, startRadius: 0,
+                                       endCenter: .zero, endRadius: 1, options: [])
                 ctx.restoreGState()
-            } else {
-                ctx.setFillColor(solidBackdrop)
-                ctx.fill(region)
             }
+
+            drawSoftbox(center: CGPoint(x: 0.22, y: 0.16), radii: CGSize(width: 0.90, height: 0.82), color: UIColor(red: 0.58, green: 0.78, blue: 1.0, alpha: 1), alpha: 0.55)
+            drawSoftbox(center: CGPoint(x: 0.78, y: 0.82), radii: CGSize(width: 0.88, height: 0.70), color: UIColor(red: 0.10, green: 0.80, blue: 0.92, alpha: 1), alpha: 0.30)
+            drawSoftbox(center: CGPoint(x: 0.78, y: 0.18), radii: CGSize(width: 0.50, height: 0.48), color: .white, alpha: 0.25)
+            ctx.restoreGState()
         }
         if solidBackdrop == nil { sourceView.layer.render(in: ctx) }
 '''

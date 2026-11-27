@@ -20,7 +20,7 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.8'
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.9'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -126,8 +126,8 @@ def check():
         for name in ('BackgroundCaptureDraw.swift', 'ViewLayerCapture.swift'):
             capture = (a/name).read_text()
             assert 'if solidBackdrop == nil && opaqueBackdrop {' in capture
-            assert 'let colors: [CGColor]' in capture and 'drawLinearGradient' in capture
-            assert capture.index('ctx.scaleBy(') < capture.index('ctx.drawLinearGradient(') < capture.index('if solidBackdrop == nil { sourceView.layer.render(in: ctx) }')
+            assert 'drawRadialGradient' in capture and 'func drawSoftbox' in capture
+            assert capture.index('ctx.scaleBy(') < capture.index('ctx.drawRadialGradient(') < capture.index('if solidBackdrop == nil { sourceView.layer.render(in: ctx) }')
         assert renderer.count('solidBackdrop: (hostView as? TheseusView)?.ngCapsuleBackdrop?.cgColor') == 2
         fallback = (a/'VisualEffectFallback.swift').read_text()
         assert 'blurView.isHidden = ngCapsuleBackdrop != nil' in fallback
