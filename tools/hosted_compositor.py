@@ -251,9 +251,9 @@ def tab(s, rep):
                 '    private func updateTheseusFrame() {\n        guard !ngUseHostPosition else { return }\n')
     s = rep(s, '    private func setupTheseus() {\n', '    private func setupTheseus() {\n')
     s = rep(s, '        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }', '''        glassView.ngNonblockingRendering = ngUseHostPosition
-        glassView.ngOpaqueBackdrop = ngUseHostPosition
+        glassView.ngOpaqueBackdrop = false
         if ngUseHostPosition {
-            glassView.setCaptureExcludedViews([backgroundView, selectionView, itemsContainerView, captureTwinRow].compactMap { $0 })
+            glassView.setCaptureExcludedViews([backgroundView, selectionView, captureTwinRow].compactMap { $0 })
         } else if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }''')
     s = rep(s, '    private func endDragImmediately() {\n',
                 '    private func endDragImmediately() {\n        if ngUseHostPosition { ngCancelHostedDrag(); return }\n')

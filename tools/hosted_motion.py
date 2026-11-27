@@ -40,7 +40,7 @@ def tab(s, rep):
 
         var config = TheseusConfiguration.lens''')
     s = rep(s, '        glassView.ngNonblockingRendering = ngUseHostPosition', '''        glassView.ngNonblockingRendering = ngUseHostPosition
-        glassView.ngHostedDragLens = ngUseHostPosition
+        glassView.ngHostedDragLens = false
         config.edgeFeather = ngUseHostPosition ? 1.0 : TheseusTabBar.pillFeather''')
     s = rep(s, '''        glassView.captureWillBegin = { [weak self] in
             self?.showCaptureTint(true)
@@ -50,28 +50,13 @@ def tab(s, rep):
         }
         glassView.captureItemLayer = { [weak self] context, sourceView in
             self?.drawLensItems(in: context, from: sourceView)
-        }''', '''        if ngUseHostPosition {
-            glassView.captureItemLayer = { [weak self] context, sourceView in
-                self?.ngDrawHostedLensItems(in: context, from: sourceView)
-            }
-        } else {
+        }''', '''        if !ngUseHostPosition {
             glassView.captureWillBegin = { [weak self] in self?.showCaptureTint(true) }
             glassView.captureDidEnd = { [weak self] in self?.showCaptureTint(false) }
             glassView.captureItemLayer = { [weak self] context, sourceView in
                 self?.drawLensItems(in: context, from: sourceView)
             }
         }''')
-    s = rep(s, '    private func drawLensItems(in context: CGContext, from sourceView: UIView) {', '''    private func ngDrawHostedLensItems(in context: CGContext, from sourceView: UIView) {
-        guard sourceView === self, let row = itemsContainerView else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        defer { CATransaction.commit() }
-        if captureTwinRow.frame != row.frame { captureTwinRow.frame = row.frame }
-        itemViews.forEach { $0.syncCaptureTwin(into: captureTwinRow) }
-        Self.render(itemViews.map(\\.captureTwinView), in: context, to: sourceView, within: context.boundingBoxOfClipPath)
-    }
-
-    private func drawLensItems(in context: CGContext, from sourceView: UIView) {''')
     s = rep(s, '        if let sourceView = theseusSourceView, sourceView.bounds.width > 0, glassView.sourceView !== sourceView {',
             '        if !ngUseHostPosition, let sourceView = theseusSourceView, sourceView.bounds.width > 0, glassView.sourceView !== sourceView {')
     s = rep(s, '        theseusView?.sourceView = theseusSourceView', '        theseusView?.sourceView = ngUseHostPosition ? self : theseusSourceView')
@@ -255,10 +240,6 @@ def renderer(s, rep):
     return rep(s, '''        let renderScale = currentRefractionQuality.renderScale
 
         let sourceTexture: MTLTexture''', '''        let renderScale = currentRefractionQuality.renderScale
-        if ngHostedDragLens {
-            return ngRenderHostedLens(to: drawable, from: sourceView, region: captureRegion,
-                                      renderScale: renderScale, frameValue: frameValue)
-        }
 
         let sourceTexture: MTLTexture''')
 

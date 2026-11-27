@@ -354,10 +354,10 @@ def appearance_surface(s, rep):
     }
 
     private func ngUpdateSolidSelection(animated: Bool = false) {
-        let tone: CGFloat = ngSolidSelectionDark ? 0.26 : 0.88''')
+        let tone: CGFloat = 0''')
     s = rep(s, '''        backgroundColor = UIColor(white: tone, alpha: 1)
         layer.cornerRadius = shape.cornerRadius
-        CATransaction.commit()''', '''        let fill = UIColor(white: tone, alpha: 1)
+        CATransaction.commit()''', '''        let fill = UIColor.clear
         let previous = layer.presentation()?.backgroundColor ?? layer.backgroundColor
         let changed = backgroundColor != fill
         backgroundColor = fill

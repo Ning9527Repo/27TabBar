@@ -59,9 +59,9 @@ def check():
         assert 'if !self.ngUseHostPosition, self.selectionView.sourceView == nil {' in tab
         solid = surface.split('    func ngEnableSolidSelection() {', 1)[1].split('    var ngNonblockingRendering', 1)[0]
         for invariant in ('renderer = nil', 'providesCaptureSnapshot = false', 'sourceView = nil',
-                          'fallbackView?.isHidden = true', 'metalLayerView?.isHidden = true',
-                          'UIColor(white: tone, alpha: 1)', 'backgroundColor = fill', 'layer.cornerRadius = shape.cornerRadius'):
+                          'fallbackView?.isHidden = true', 'metalLayerView?.isHidden = true'):
             assert invariant in solid, invariant
+        assert 'UIColor.clear' in solid
         for method in ('setupRenderer()', 'updateRenderingMode()', 'ngPrepareReplacement()',
                        'ngRefreshPlatter(crossfade: Bool, onReveal: ((Bool) -> Void)? = nil) -> Bool'):
             guard = 'return false' if method.startswith('ngRefreshPlatter') else 'return'
@@ -100,8 +100,11 @@ def check():
         assert 'selectionView.alpha = 1' in shrink and 'self.ngSyncDragPill(glassView)' in shrink
         assert 'glassView.alpha = 1 - share' in shrink
         setup = section(tab, '    private func setupTheseus()', '    private func showTheseus()')
-        assert 'glassView.ngHostedDragLens = ngUseHostPosition' in setup
-        assert 'glassView.setCaptureExcludedViews([backgroundView, selectionView, itemsContainerView, captureTwinRow].compactMap { $0 })' in setup
+        assert 'glassView.ngHostedDragLens = false' in setup
+        assert 'glassView.setCaptureExcludedViews([backgroundView, selectionView, captureTwinRow].compactMap { $0 })' in setup
+        assert 'glassView.ngOpaqueBackdrop = false' in setup
+        assert 'if !ngUseHostPosition {' in setup and 'captureItemLayer' in setup
+        assert 'captureItemLayer' in setup.split('if !ngUseHostPosition {', 1)[1]
         assert 'if ngUseHostPosition { ngBeginHostedDrag(at: location.x); return }' not in tab
         assert 'if ngUseHostPosition { ngMoveHostedDrag(to: convert(location, to: contentView).x); return }' not in tab
         assert 'if ngUseHostPosition { ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x); return }' not in tab
@@ -109,22 +112,14 @@ def check():
         assert 'private func beginInteraction(at location:' in tab
         assert 'showTheseus()' in tab and 'hideTheseus()' in tab
         assert 'animator.morph(from: startFrame, to: growthTarget' in section(tab, '    private func showTheseus()', '    private func hideTheseus()')
-        assert 'glassView.ngHostedDragLens = ngUseHostPosition' in setup
-        assert 'ngMakeLensBackdrop(236)' in renderer and 'ngMakeLensBackdrop(65)' in renderer
-        assert 'width: 1, height: 1' in renderer
         assert 'config.edgeFeather = ngUseHostPosition ? 1.0 : TheseusTabBar.pillFeather' in setup
-        assert 'ngBeginHostedDrag(at: location.x)' not in tab
-        assert 'ngMoveHostedDrag(to: convert(location, to: contentView).x)' not in tab
-        assert 'ngFinishHostedDrag(at: convert(CGPoint(x: rawX, y: 0), to: contentView).x)' not in tab
-        assert '!isShuttingDown, !ngBackdropHeld' in renderer
-        fast = section(renderer, '    private func ngRenderHostedLens(', '    // CAMetalLayer acquisition')
-        assert 'originalSourceTexture: plate' in fast and 'itemTexture: items' in fast
-        assert 'encodeBlurPass(' not in fast and 'captureTexture(' not in fast
-        assert 'fixedSize: size' in fast and 'guard encodeRefractionCompositePass' in fast
-        assert 'func ngTrackedLensFrame' in tab and 'frame.midX - converted.midX' in tab
         render = section(renderer, '    private func performRender(', '    /// A glass with a lens chain')
-        assert render.index('if ngHostedDragLens {') < render.index('NGSystemTabCaptureBegin()')
-        assert '0xff000000' in renderer and 'if ngHostedDragLens && shouldUseFallback' in surface
+        assert 'captureTexture(' in render
+        assert 'if ngHostedDragLens {' not in render
+        assert 'func ngTrackedLensFrame' in tab and 'frame.midX - converted.midX' in tab
+        assert 'opaqueBackdrop: (hostView as? TheseusView)?.ngOpaqueBackdrop == true' in renderer
+        assert 'if ngHostedDragLens && shouldUseFallback' in surface
+        assert 'glassView.ngHostedDragLens = false' in setup
         assert 'direct: ngUseHostPosition' in tab
         assert 'if direct, ngDragCenter.update(x)' in tab and 'centerX = frame.midX' in tab
         assert 'transform.m41 += containerFrame.midX - current.midX' in tab
