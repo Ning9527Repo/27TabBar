@@ -198,9 +198,7 @@ def tab(s, rep):
                     if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {''', '''                    self.placeLens(at: containerFrame)
                     if self.ngUseHostPosition {
                         let pill = self.convertFromTheseusContainer(containerFrame)
-                        self.selectionView.bounds = CGRect(origin: .zero, size: pill.size)
                         self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)
-                        self.selectionView.shape.cornerRadius = min(pill.width, pill.height) / 2
                         self.selectionView.alpha = 1
                         self.selectionView.isHidden = false
                     }

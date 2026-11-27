@@ -23,6 +23,10 @@ final class Glass {
     let layer = Layer()
     var isHidden = true, continuousUpdate = false
     var alpha: CGFloat = 1
+    var center: CGPoint {
+        get { CGPoint(x: layer.frame.midX, y: layer.frame.midY) }
+        set { layer.frame.origin = CGPoint(x: newValue.x - layer.frame.width / 2, y: newValue.y - layer.frame.height / 2) }
+    }
     func pauseRendering() { continuousUpdate = false }
 }
 final class Driver { func stop() {} }
