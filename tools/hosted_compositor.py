@@ -14,7 +14,6 @@ def tab(s, rep):
         resetAdaptation()
         contentView.overrideUserInterfaceStyle = .unspecified
         selectionView.ngEnableSolidSelection()
-        pillShadeLayer.removeFromSuperlayer()
         ngHostedPlatter.overrideUserInterfaceStyle = .light
         ngHostedPlatter.isUserInteractionEnabled = false
         ngHostedPlatter.clipsToBounds = true
@@ -110,7 +109,7 @@ def tab(s, rep):
     s = rep(s, '    private func updateAppearanceForCurrentMode() {\n',
             '    private func updateAppearanceForCurrentMode() {\n        if ngUseHostPosition { ngApplyHostedAppearance(animated: false); return }\n')
     s = rep(s, '    private func updatePillShade(size: CGSize) {\n',
-            '    private func updatePillShade(size: CGSize) {\n        guard !ngUseHostPosition else { return }\n')
+            '    private func updatePillShade(size: CGSize) {\n')
     s = rep(s, '''        if isDragging {
             endDragImmediately()
         }
@@ -151,19 +150,12 @@ def tab(s, rep):
             teardownTheseus()''')
     # Keep the pill and live item row as separate layers above the lens.
     s = rep(s, '\n        container.addSubview(glassView)\n', '''
-        if ngUseHostPosition {
-            contentView.insertSubview(glassView, aboveSubview: selectionView)
-            contentView.bringSubviewToFront(glassView)
-        } else { container.addSubview(glassView) }
+        container.addSubview(glassView)
 ''')
     s = rep(s, '\n            container.addSubview(glassView)\n', '''
-            if ngUseHostPosition {
-                contentView.insertSubview(glassView, aboveSubview: selectionView)
-                contentView.bringSubviewToFront(glassView)
-            } else { container.addSubview(glassView) }
+            container.addSubview(glassView)
 ''')
-    s = rep(s, '        glassView.resumeRendering()\n', '''        if ngUseHostPosition { contentView.bringSubviewToFront(glassView) }
-        glassView.resumeRendering()
+    s = rep(s, '        glassView.resumeRendering()\n', '''        glassView.resumeRendering()
 ''')
     a = s.index('        glassView.captureWillBegin =')
     b = s.index('    private func showTheseus()', a)
@@ -179,12 +171,6 @@ def tab(s, rep):
 ''')
     s = rep(s, '        isDragging = true\n        ngFollowFrame = nil\n        let anchorX', '''        isDragging = true
         ngFollowFrame = nil
-        if ngUseHostPosition {
-            selectionView.layer.removeAllAnimations()
-            selectionView.alpha = 0
-            selectionView.isHidden = true
-            applyItemTints(selectedAt: selectedIndex, animated: false)
-        }
         let anchorX''')
     s = rep(s, '        selectionAnimator?.rest(at: restingCenterX, immediate: ngUseHostPosition)\n\n        showTheseus()', '''        showTheseus()
         selectionAnimator?.rest(at: restingCenterX, immediate: ngUseHostPosition)''')
@@ -199,21 +185,9 @@ def tab(s, rep):
             updateSelectionViewFrame(animated: false)
         }
         updateItemColors()''')
-    s = rep(s, '            self.selectionView.layer.transform = LensMorph.transform(mapping: pillLocal, onto: localFrame)', '''            if !self.ngUseHostPosition {
-                self.selectionView.layer.transform = LensMorph.transform(mapping: pillLocal, onto: localFrame)
-            }''')
     s = rep(s, '                    if self.isPillFading, !self.selectionView.isHidden {',
             '                    if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {')
-    s = rep(s, '        fadePill(to: 0, spring: Self.pillFadeOutSpring)', '''        if ngUseHostPosition {
-            pillFadeDriver.stop()
-            isPillFading = false
-            selectionView.alpha = 0
-            selectionView.isHidden = true
-        } else {
-            fadePill(to: 0, spring: Self.pillFadeOutSpring)
-        }''')
-    s = rep(s, '        glassView.setCaptureExcludedViews([ngExcludedBar, selectionView].compactMap { $0 })',
-            '        glassView.setCaptureExcludedViews([ngExcludedBar, selectionView].compactMap { $0 })')
+    # Keep the original pill fade during lens expansion for the hosted style too.
     s = rep(s, '''                    self.placeLens(at: containerFrame)
                     if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {''', '''                    self.placeLens(at: containerFrame)
                     if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {''')

@@ -8,6 +8,7 @@ import hosted_appearance
 import hosted_compositor
 import hosted_motion
 import platter_edges
+import restore_019_visuals
 import stability
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -130,17 +131,15 @@ def tabbar(s):
         config.edgeEffects.glareIntensity = 0
 ''', '''        config.refraction.magnificationCenterY = 0
         config.refraction.intensity = 1.1
-        config.edgeEffects.rimGlow = 0.25
-        config.edgeEffects.glareIntensity = 0.12
+        config.edgeEffects.rimGlow = 0
+        config.edgeEffects.glareIntensity = 0
 ''')
     s = replace(s, '''        material.apply(to: &config, isDark: isDarkAppearance, activity: activity)
         config.lensChain = usesIOS26Look''', '''        material.apply(to: &config, isDark: isDarkAppearance, activity: activity)
-        if ngUseHostPosition { config.refraction.interiorSharpness = min(config.refraction.interiorSharpness, 0.82) }
         config.lensChain = usesIOS26Look''')
     s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '''        glassView.sourceView = sourceView
         glassView.ngNonblockingRendering = ngUseHostPosition
-        glassView.ngCaptureScale = ngUseHostPosition ? 0.5 : 1
-        glassView.setCaptureExcludedViews([ngExcludedBar, selectionView].compactMap { $0 })
+        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }
         glassView.isHidden''')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)
@@ -313,15 +312,7 @@ def tab_frame_policy(s):
         ngInvalidatePageFrames(selectionDelay: TheseusSettings.shared.areMorphAnimationsEnabled ? 0.22 : 0)
         selectedIndex = index''')
     s = replace(s, '            if isCollapsingLens, confirmed != selectedIndex { endDragImmediately() }\n            selectedIndex = confirmed', '            ngApplySelection(confirmed)')
-    s = replace(s, '        let frame = selectionFrame(for: slotFrame(at: selectedIndex))', '''        let rawFrame = selectionFrame(for: slotFrame(at: selectedIndex))
-        let frame: CGRect
-        if ngUseHostPosition, window != nil {
-            let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
-            let screenFrame = contentView.convert(rawFrame, to: nil)
-            frame = contentView.convert(NGTabPresentation.pixelAligned(screenFrame, scale: scale), from: nil)
-        } else {
-            frame = rawFrame
-        }''')
+    s = replace(s, '        let frame = selectionFrame(for: slotFrame(at: selectedIndex))', '''        let frame = selectionFrame(for: slotFrame(at: selectedIndex))''')
     s = replace(s, '        if selectionView.shape.cornerRadius != frame.height / 2 {\n            selectionView.shape.cornerRadius = frame.height / 2', '''        let radius = ngUseHostPosition ? min(frame.width, frame.height) / 2 : frame.height / 2
         if ngUseHostPosition {
             selectionView.layer.cornerCurve = .continuous
@@ -581,15 +572,8 @@ def motion_policy(s):
             shape.heightInset = 0
             shape.cornerRadius = lensCornerRadius(forHeight: releaseFrame.height)
             glassView.shape = shape
-        }''', '''        if ngUseHostPosition {
-            pillFadeDriver.stop()
-            isPillFading = false
-            selectionView.isHidden = false
-            selectionView.alpha = 0
-        } else {
-            selectionView.isHidden = false
-            fadePill(to: 1, spring: Self.pillFadeInSpring)
-        }
+        }''', '''        selectionView.isHidden = false
+        fadePill(to: 1, spring: Self.pillFadeInSpring)
         let size = glassView.bounds.size
         let modelFrame = CGRect(x: glassView.center.x - size.width / 2, y: glassView.center.y - size.height / 2,
                                 width: size.width, height: size.height)
@@ -614,19 +598,14 @@ def motion_policy(s):
         guard !releaseFrame.isEmpty, !animationBase.isEmpty else { endDragImmediately(); return }''')
     s = replace(s, '            glassView.layer.transform = LensMorph.transform(mapping: releaseFrame, onto: frame)', '''            glassView.layer.transform = LensMorph.transform(mapping: animationBase, onto: frame)
             if self.ngUseHostPosition {
-                let pill = self.convertFromTheseusContainer(frame)
-                self.selectionView.bounds = CGRect(origin: .zero, size: pill.size)
-                self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)
-                self.selectionView.shape.cornerRadius = pill.height / 2
-                let capsuleShare = min(max(progress, 0), 1)
-                self.selectionView.alpha = capsuleShare
-                glassView.alpha = 1 - capsuleShare
+                let share = min(max((progress - 0.72) / 0.28, 0), 1)
+                self.selectionView.alpha = share
+                glassView.alpha = 1 - share
             }''')
     s = replace(s, '            self.isCollapsingLens = false\n            self.selectionView.isHidden = false', '''            self.isCollapsingLens = false
             if self.ngUseHostPosition {
                 self.updateSelectionViewFrame(animated: false)
                 self.selectionView.alpha = 1
-                self.selectionView.isHidden = false
             }
             self.selectionView.isHidden = false''')
     s = replace(s, '    private func endDragImmediately() {\n        isDragging = false',
@@ -817,7 +796,8 @@ def stage(dst):
         s = stability.appearance_tab(stability.drag_tab(s, replace), replace)
         s = hosted_appearance.tab(hosted_motion.tab(s, replace), replace)
         s = hosted_compositor.tab(s, replace)
-        return platter_edges.tab(s, replace)
+        s = platter_edges.tab(s, replace)
+        return restore_019_visuals.apply(s)
 
     def adapted_renderer(s):
         s = nonblocking_lens_renderer(renderer_frame_policy(renderer(s)))
