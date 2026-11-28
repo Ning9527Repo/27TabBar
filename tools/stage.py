@@ -137,9 +137,11 @@ def tabbar(s):
         glassView.ngNonblockingRendering = ngUseHostPosition
         glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })
         if ngUseHostPosition {
+            selectionView.isHidden = true
+            selectionView.alpha = 0
             var lensConfig = glassView.configuration
             lensConfig.lensFill = 1
-            lensConfig.lensFillColor = UIColor(white: systemIsDark ? 0.26 : 0.88, alpha: 1)
+            lensConfig.lensFillColor = UIColor.clear
             glassView.configuration = lensConfig
         }
         glassView.isHidden''')
@@ -627,6 +629,7 @@ def motion_policy(s):
             if self.ngUseHostPosition {
                 self.updateSelectionViewFrame(animated: false)
                 self.selectionView.alpha = 1
+                self.selectionView.isHidden = false
             }
             self.selectionView.isHidden = false''')
     s = replace(s, '    private func endDragImmediately() {\n        isDragging = false',

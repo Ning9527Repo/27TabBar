@@ -46,6 +46,7 @@ def tab(s, rep):
         let tint = UIColor(white: dark ? 0.04 : 1, alpha: reduce ? 1 : (dark ? 0.76 : 0.22))
         let animate = animated && window != nil && !UIAccessibility.isReduceMotionEnabled
             && TheseusSettings.shared.areMorphAnimationsEnabled
+        if ngUseHostPosition && ngHostIsInteracting { selectionView.isHidden = true }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         ngAnimateAppearance = animate
@@ -116,7 +117,7 @@ def tab(s, rep):
         contentView.bringSubviewToFront(container)''', '''        if isDragging || (ngUseHostPosition && isCollapsingLens) { endDragImmediately() }
         contentView.bringSubviewToFront(container)''')
     s = rep(s, 'showsSelectedIcon: isSelected && !isDragging,',
-            'showsSelectedIcon: isSelected && (ngUseHostPosition || !isDragging),')
+            'showsSelectedIcon: isSelected && !(ngUseHostPosition && isDragging),')
     s = rep(s, '    @objc private func theseusSettingsDidChange() {\n', '''    @objc private func theseusSettingsDidChange() {
         if ngUseHostPosition {
             ngApplyHostedAppearance(animated: false)
@@ -183,7 +184,8 @@ def tab(s, rep):
     s = rep(s, '        fadePill(to: 0, spring: Self.pillFadeOutSpring)', '''        if ngUseHostPosition {
             pillFadeDriver.stop()
             isPillFading = false
-            selectionView.alpha = 1
+            selectionView.alpha = 0
+            selectionView.isHidden = true
         } else {
             fadePill(to: 0, spring: Self.pillFadeOutSpring)
         }''')
