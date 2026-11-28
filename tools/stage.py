@@ -133,8 +133,12 @@ def tabbar(s):
         config.edgeEffects.rimGlow = 0.25
         config.edgeEffects.glareIntensity = 0.12
 ''')
+    s = replace(s, '        material.apply(to: &config, isDark: isDarkAppearance, activity: activity)\n', '''        material.apply(to: &config, isDark: isDarkAppearance, activity: activity)
+        if ngUseHostPosition { config.refraction.interiorSharpness = min(config.refraction.interiorSharpness, 0.82) }
+''')
     s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '''        glassView.sourceView = sourceView
         glassView.ngNonblockingRendering = ngUseHostPosition
+        glassView.ngCaptureScale = ngUseHostPosition ? 0.5 : 1
         glassView.setCaptureExcludedViews([ngExcludedBar, selectionView].compactMap { $0 })
         glassView.isHidden''')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
@@ -668,7 +672,9 @@ def motion_policy(s):
 
 def nonblocking_lens_renderer(s):
     s = replace(s, '    var ngCaptureNotBefore: CFTimeInterval = 0',
-                '    var ngCaptureNotBefore: CFTimeInterval = 0\n    var ngNonblockingRendering = false')
+                '    var ngCaptureNotBefore: CFTimeInterval = 0\n    var ngNonblockingRendering = false\n    var ngCaptureScale: CGFloat = 1')
+    s = replace(s, '        let renderScale = currentRefractionQuality.renderScale',
+                '        let renderScale = currentRefractionQuality.renderScale * ngCaptureScale')
     s = replace(s, 'metalLayer?.presentsWithTransaction = continuousUpdate',
                 'metalLayer?.presentsWithTransaction = continuousUpdate && !ngNonblockingRendering')
     s = replace(s, '        isRendering = true\n        markAllFramesCompleted()', '''        isRendering = true
@@ -712,9 +718,12 @@ def nonblocking_lens_renderer(s):
 def motion_surface(s):
     s = replace(s, '    var ngSelectionBackdrop = false', '''    var ngSelectionBackdrop = false
     var ngNonblockingRendering = false
+    var ngCaptureScale: CGFloat = 1 { didSet { renderer?.ngCaptureScale = ngCaptureScale } }
     var ngFrostedPlatter = false''')
-    s = replace(s, '        renderer?.ngCaptureNotBefore = ngCaptureNotBefore\n        renderer?.configuration',
-                '        renderer?.ngCaptureNotBefore = ngCaptureNotBefore\n        renderer?.ngNonblockingRendering = ngNonblockingRendering\n        renderer?.configuration')
+    s = replace(s, '        renderer?.hostView = self\n        renderer?.ngCaptureNotBefore = ngCaptureNotBefore\n        renderer?.configuration = configuration', '''        renderer?.hostView = self
+        renderer?.ngCaptureNotBefore = ngCaptureNotBefore
+        renderer?.ngNonblockingRendering = ngNonblockingRendering
+        renderer?.configuration = configuration''')
     s = replace(s, '            fallbackView?.configure(with: configuration)\n            if oldValue.shape', '''            // The retained fallback is normally hidden. A drag should not
             // rebuild its gradients and blur bookkeeping on each frame.
             if let fallbackView, !fallbackView.isHidden { fallbackView.configure(with: configuration) }

@@ -27,4 +27,5 @@ def surface(s, rep):
         if !held { renderer?.setNeedsRender() }
     }''')
     return rep(s, '        renderer?.ngNonblockingRendering = ngNonblockingRendering', '''        renderer?.ngNonblockingRendering = ngNonblockingRendering
-        renderer?.ngBackdropHeld = ngBackdropHeld''')
+        renderer?.ngBackdropHeld = ngBackdropHeld
+        renderer?.ngCaptureScale = ngCaptureScale''')
