@@ -24,8 +24,12 @@ final class Layer {
     var frame = CGRect.zero, transform = CATransform3DIdentity
     func removeAllAnimations() {}
 }
+final class PillShape { var cornerRadius: CGFloat = 0 }
 final class Glass {
     let layer = Layer()
+    var frame = CGRect.zero, bounds = CGRect.zero
+    var center = CGPoint.zero
+    var shape = PillShape()
     var isHidden = true, continuousUpdate = false
     var alpha: CGFloat = 1
     func pauseRendering() { continuousUpdate = false }
