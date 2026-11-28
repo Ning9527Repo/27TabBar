@@ -123,28 +123,8 @@ def tabbar(s):
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
             return CGRect(x: barFrame.minX + CGFloat(slot) * itemWidth, y: ngUseHostPosition ? barFrame.minY : 0, width: itemWidth, height: itemHeight)''')
-    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? contentView : theseusSourceView?.superview\n')
-    s = replace(s, '''        config.refraction.magnificationCenterY = 0
-        config.refraction.intensity = 1.1
-        config.edgeEffects.rimGlow = 0
-        config.edgeEffects.glareIntensity = 0
-''', '''        config.refraction.magnificationCenterY = 0
-        config.refraction.intensity = 1.1
-        config.edgeEffects.rimGlow = 0.25
-        config.edgeEffects.glareIntensity = 0.12
-''')
-    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '''        glassView.sourceView = sourceView
-        glassView.ngNonblockingRendering = ngUseHostPosition
-        glassView.setCaptureExcludedViews([ngExcludedBar].compactMap { $0 })
-        if ngUseHostPosition {
-            selectionView.isHidden = true
-            selectionView.alpha = 0
-            var lensConfig = glassView.configuration
-            lensConfig.lensFill = 1
-            lensConfig.lensFillColor = UIColor.clear
-            glassView.configuration = lensConfig
-        }
-        glassView.isHidden''')
+    s = replace(s, '        theseusSourceView?.superview\n', '        ngUseHostPosition ? self : theseusSourceView?.superview\n')
+    s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '        glassView.sourceView = sourceView\n        if let bar = ngExcludedBar { glassView.setCaptureExcludedViews([bar]) }\n        glassView.isHidden')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)
         case .cancelled, .failed:
@@ -221,13 +201,16 @@ def renderer(s):
     s = replace(s, '        let viewFrame = metalLayer.frame\n', '        let viewFrame = hostView?.bounds ?? metalLayer.frame\n')
     s = replace(s, '              let superlayer = metalLayer.superlayer else {',
                 '              let superlayer = hostView?.layer ?? metalLayer.superlayer else {')
-    s = replace(s, '                    excludedViews: excludedViews\n', '''                    excludedViews: excludedViews,\n                    opaqueBackdrop: (hostView as? TheseusView)?.ngOpaqueBackdrop == true\n'''.rstrip('\n') + '\n', count=2)
+    s = replace(s, '                    excludedViews: excludedViews\n', '''                    excludedViews: excludedViews,\n                    opaqueBackdrop: (hostView as? TheseusView)?.ngOpaqueBackdrop == true,\n                    hierarchyCapture: (hostView as? TheseusView)?.ngHierarchyCapture == true\n'''.rstrip('\n') + '\n', count=2)
     s = replace(s, '        willCapture?()\n        defer { didCapture?() }', '        NGSystemTabCaptureBegin()\n        willCapture?()\n        defer { didCapture?(); NGSystemTabCaptureEnd() }')
     return replace(s, '            commandBuffer.addCompletedHandler { _ in\n                DispatchQueue.main.async(execute: onPresent)', '            commandBuffer.addCompletedHandler { buffer in\n                guard buffer.status == .completed else { return }\n                DispatchQueue.main.async(execute: onPresent)')
 
 
 def surface(s):
     s = replace(s, '    public var onPresent: (() -> Void)? {\n        didSet { renderer?.onPresent = onPresent }\n    }', '''    var ngOpaqueBackdrop = false
+    var ngHierarchyCapture = false {
+        didSet { renderer?.ngHierarchyCapture = ngHierarchyCapture }
+    }
     private var ngWaitingForPresent = false
     private var ngPresented = false
 
@@ -274,15 +257,18 @@ def surface(s):
     return replace(s, '        let paddingX = padding.x * scale\n', '        metalLayerView?.frame = bounds.insetBy(dx: -padding.x, dy: -padding.y)\n        let paddingX = padding.x * scale\n')
 
 
-def opaque_capture(s, rect):
+def opaque_capture(s, rect, context_already_pushed=False):
     s = replace(s, '        excludedViews: [UIView] = []\n',
-                '        excludedViews: [UIView] = [],\n        opaqueBackdrop: Bool = false\n')
+                '        excludedViews: [UIView] = [],\n        opaqueBackdrop: Bool = false,\n        hierarchyCapture: Bool = false\n')
     line = '        ctx.clear(' + rect + ')\n'
-    return replace(s, line, line + '''        if opaqueBackdrop {
+    s = replace(s, line, line + '''        if opaqueBackdrop {
             ctx.setFillColor(UIColor.systemBackground.resolvedColor(with: sourceView.traitCollection).cgColor)
             ctx.fill(''' + rect + ''')
         }
 ''')
+    drawing = ('            sourceView.drawHierarchy(in: sourceView.bounds, afterScreenUpdates: false)' if context_already_pushed else
+               '            UIGraphicsPushContext(ctx)\n            sourceView.drawHierarchy(in: sourceView.bounds, afterScreenUpdates: false)\n            UIGraphicsPopContext()')
+    return replace(s, '        sourceView.layer.render(in: ctx)', '        if hierarchyCapture {\n' + drawing + '\n        } else {\n            sourceView.layer.render(in: ctx)\n        }')
 
 
 def compensation(s):
@@ -316,20 +302,7 @@ def tab_frame_policy(s):
         ngInvalidatePageFrames(selectionDelay: TheseusSettings.shared.areMorphAnimationsEnabled ? 0.22 : 0)
         selectedIndex = index''')
     s = replace(s, '            if isCollapsingLens, confirmed != selectedIndex { endDragImmediately() }\n            selectedIndex = confirmed', '            ngApplySelection(confirmed)')
-    s = replace(s, '        let frame = selectionFrame(for: slotFrame(at: selectedIndex))', '''        let rawFrame = selectionFrame(for: slotFrame(at: selectedIndex))
-        let frame: CGRect
-        if ngUseHostPosition, window != nil {
-            let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
-            let screenFrame = contentView.convert(rawFrame, to: nil)
-            frame = contentView.convert(NGTabPresentation.pixelAligned(screenFrame, scale: scale), from: nil)
-        } else {
-            frame = rawFrame
-        }''')
     s = replace(s, '        if selectionView.shape.cornerRadius != frame.height / 2 {\n            selectionView.shape.cornerRadius = frame.height / 2', '''        let radius = ngUseHostPosition ? min(frame.width, frame.height) / 2 : frame.height / 2
-        if ngUseHostPosition {
-            selectionView.layer.cornerCurve = .continuous
-            selectionView.layer.masksToBounds = true
-        }
         if selectionView.shape.cornerRadius != radius {
             selectionView.shape.cornerRadius = radius''')
     s = replace(s, '            pillShadeLayer.cornerRadius = size.height / 2',
@@ -449,6 +422,7 @@ def surface_frame_policy(s):
             self.captureSnapshot = image
             self.snapshotDidUpdate?()''')
     s = replace(s, '        renderer?.hostView = self\n        renderer?.configuration', '''        renderer?.hostView = self
+        renderer?.ngHierarchyCapture = ngHierarchyCapture
         renderer?.ngCaptureNotBefore = ngCaptureNotBefore
         renderer?.configuration''')
     return s
@@ -528,6 +502,9 @@ def motion_policy(s):
         if !ngUseHostPosition || (!isDragging && !isCollapsingLens && lensMorphAnimator?.isRunning != true) {
             updateSelectionViewFrame(animated: false)
         }''')
+    s = replace(s, '        glassView.sourceView = sourceView\n        if let bar', '''        glassView.sourceView = sourceView
+        glassView.ngNonblockingRendering = ngUseHostPosition
+        if let bar''')
     s = replace(s, '        backgroundGlassView.configuration.refraction.interiorSharpness = isDark ? Self.chromeDetailDark : Self.chromeDetailLight',
                 '        backgroundGlassView.configuration.refraction.interiorSharpness = ngUseHostPosition ? 0 : (isDark ? Self.chromeDetailDark : Self.chromeDetailLight)')
     a = s.index('    private func applyBarBodyGain(')
@@ -617,19 +594,15 @@ def motion_policy(s):
         guard !releaseFrame.isEmpty, !animationBase.isEmpty else { endDragImmediately(); return }''')
     s = replace(s, '            glassView.layer.transform = LensMorph.transform(mapping: releaseFrame, onto: frame)', '''            glassView.layer.transform = LensMorph.transform(mapping: animationBase, onto: frame)
             if self.ngUseHostPosition {
-                let pill = self.convertFromTheseusContainer(frame)
-                self.selectionView.bounds = CGRect(origin: .zero, size: pill.size)
-                self.selectionView.center = CGPoint(x: pill.midX, y: pill.midY)
-                self.selectionView.shape.cornerRadius = pill.height / 2
-                let capsuleShare = min(max(progress, 0), 1)
-                self.selectionView.alpha = capsuleShare
-                glassView.alpha = 1 - capsuleShare
+                // The settled pill only takes over once the lens is near the target.
+                let share = min(max((progress - 0.72) / 0.28, 0), 1)
+                self.selectionView.alpha = share
+                glassView.alpha = 1 - share
             }''')
     s = replace(s, '            self.isCollapsingLens = false\n            self.selectionView.isHidden = false', '''            self.isCollapsingLens = false
             if self.ngUseHostPosition {
                 self.updateSelectionViewFrame(animated: false)
                 self.selectionView.alpha = 1
-                self.selectionView.isHidden = false
             }
             self.selectionView.isHidden = false''')
     s = replace(s, '    private func endDragImmediately() {\n        isDragging = false',
@@ -827,15 +800,15 @@ def stage(dst):
         s = stability.appearance_surface(s, replace)
         return hosted_appearance.surface(hosted_motion.surface(s, replace), replace)
 
-    def adapted_capture(s, rect):
-        return stability.bounded_capture(opaque_capture(s, rect), replace)
+    def adapted_capture(s, rect, context_already_pushed=False):
+        return stability.bounded_capture(opaque_capture(s, rect, context_already_pushed), replace)
 
     patches = {'TheseusTabBar.swift':adapted_tab,
                'TheseusRenderer.swift':adapted_renderer,
                'TheseusView.swift':adapted_surface,
                'VisualEffectFallback.swift':frosted_platter_fallback,
                'CaptureCompensation.swift':lambda s: stability.bounded_compensation(compensation(s), replace),
-               'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)'),
+               'BackgroundCaptureDraw.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: width, height: height)', True),
                'ViewLayerCapture.swift':lambda s: adapted_capture(s, 'CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)')}
     dst.mkdir(parents=True,exist_ok=True)
     for p in sorted((VENDOR/'Sources/Theseus').rglob('*.swift')):
