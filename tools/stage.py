@@ -133,9 +133,10 @@ def tabbar(s):
         config.edgeEffects.rimGlow = 0.25
         config.edgeEffects.glareIntensity = 0.12
 ''')
-    s = replace(s, '        material.apply(to: &config, isDark: isDarkAppearance, activity: activity)\n', '''        material.apply(to: &config, isDark: isDarkAppearance, activity: activity)
+    s = replace(s, '''        material.apply(to: &config, isDark: isDarkAppearance, activity: activity)
+        config.lensChain = usesIOS26Look''', '''        material.apply(to: &config, isDark: isDarkAppearance, activity: activity)
         if ngUseHostPosition { config.refraction.interiorSharpness = min(config.refraction.interiorSharpness, 0.82) }
-''')
+        config.lensChain = usesIOS26Look''')
     s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '''        glassView.sourceView = sourceView
         glassView.ngNonblockingRendering = ngUseHostPosition
         glassView.ngCaptureScale = ngUseHostPosition ? 0.5 : 1
