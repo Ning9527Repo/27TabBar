@@ -9,6 +9,11 @@ from test_replacement import ROOT, method, stage
 
 STANDINS = r'''
 import Foundation
+final class CATransaction {
+    static func begin() {}
+    static func setDisableActions(_ disabled: Bool) {}
+    static func commit() {}
+}
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif
