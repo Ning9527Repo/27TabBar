@@ -122,8 +122,8 @@ def drag_renderer(s, rep):
         }''')
     s = rep(s, '              let drawable = metalLayer.nextDrawable() else {',
             '              let drawable = (ngNonblockingRendering ? ngTakeDrawable(metalLayer) : metalLayer.nextDrawable()) else {')
-    s = rep(s, '                    hierarchyCapture: (hostView as? TheseusView)?.ngHierarchyCapture == true\n',
-            '                    hierarchyCapture: (hostView as? TheseusView)?.ngHierarchyCapture == true,\n                    limitCompensation: ngNonblockingRendering\n', count=2)
+    s = rep(s, '                    opaqueBackdrop: (hostView as? TheseusView)?.ngOpaqueBackdrop == true\n',
+            '                    opaqueBackdrop: (hostView as? TheseusView)?.ngOpaqueBackdrop == true,\n                    limitCompensation: ngNonblockingRendering\n', count=2)
     return rep(s, '''        NGSystemTabCaptureBegin()
         willCapture?()
         defer { didCapture?(); NGSystemTabCaptureEnd() }''', '''        NGSystemTabCaptureBegin()
@@ -154,10 +154,10 @@ def bounded_compensation(s, rep):
 
 
 def bounded_capture(s, rep):
-    s = rep(s, '        opaqueBackdrop: Bool = false,\n        hierarchyCapture: Bool = false\n',
-            '        opaqueBackdrop: Bool = false,\n        hierarchyCapture: Bool = false,\n        limitCompensation: Bool = false\n')
+    s = rep(s, '        opaqueBackdrop: Bool = false\n',
+            '        opaqueBackdrop: Bool = false,\n        limitCompensation: Bool = false\n')
     return rep(s, 'CaptureCompensation.begin(in: sourceView)',
-               'hierarchyCapture ? [] : CaptureCompensation.begin(in: sourceView, region: limitCompensation ? region : nil)')
+               'CaptureCompensation.begin(in: sourceView, region: limitCompensation ? region : nil)')
 
 
 def appearance_tab(s, rep):
@@ -354,10 +354,10 @@ def appearance_surface(s, rep):
     }
 
     private func ngUpdateSolidSelection(animated: Bool = false) {
-        let tone: CGFloat = 0''')
+        let tone: CGFloat = ngSolidSelectionDark ? 0.26 : 0.88''')
     s = rep(s, '''        backgroundColor = UIColor(white: tone, alpha: 1)
         layer.cornerRadius = shape.cornerRadius
-        CATransaction.commit()''', '''        let fill = UIColor.clear
+        CATransaction.commit()''', '''        let fill = UIColor(white: tone, alpha: 1)
         let previous = layer.presentation()?.backgroundColor ?? layer.backgroundColor
         let changed = backgroundColor != fill
         backgroundColor = fill
