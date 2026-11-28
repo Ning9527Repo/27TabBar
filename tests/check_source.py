@@ -20,7 +20,7 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.19'
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.20'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -132,7 +132,7 @@ def check():
         assert 'selectionView.alpha = 0' in tab and 'selectionView.isHidden = true' in tab
         assert 'self.selectionView.isHidden = false' in shrink
         assert 'showsSelectedIcon: isSelected && !(ngUseHostPosition && isDragging)' in tab
-        assert 'let hostedTint = ngHostIsInteracting' in tab
+        assert 'let hostedTint = ngUseHostPosition' in tab
         assert 'selectedTintColor.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))' in tab
         assert 'progress - 0.72' not in shrink
         edges = section(tab, '    private func updateEdgeLayers(', '    /// One composite of chrome')
