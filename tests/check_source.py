@@ -20,7 +20,7 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.17'
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.18'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
@@ -107,7 +107,7 @@ def check():
         assert 'glassView.ngNonblockingRendering = ngUseHostPosition' in setup
         assert 'config.edgeEffects.rimGlow = 0.25' in setup
         assert 'config.edgeEffects.glareIntensity = 0.12' in setup
-        assert 'glassView.setCaptureExcludedViews([ngExcludedBar, selectionView, itemsContainerView].compactMap { $0 })' in setup
+        assert 'glassView.setCaptureExcludedViews([ngExcludedBar, selectionView].compactMap { $0 })' in setup
         assert 'glassView.captureWillBegin' in setup and 'glassView.captureDidEnd' in setup
         assert 'lensConfig.lensFill = 1' not in setup
         assert 'contentView.bringSubviewToFront(glassView)' in setup
@@ -119,9 +119,9 @@ def check():
         assert shrink.index('let shown =') < shrink.index('stopLensStretch()')
         assert 'releaseFrame = shown' in shrink and 'animationBase = base' in shrink
         assert 'LensMorph.transform(mapping: animationBase, onto: frame)' in shrink
-        assert 'glassView.setCaptureExcludedViews([ngExcludedBar, selectionView, itemsContainerView].compactMap { $0 })' in setup
+        assert 'glassView.setCaptureExcludedViews([ngExcludedBar, selectionView].compactMap { $0 })' in setup
         assert 'ngUseHostPosition ? contentView : theseusSourceView?.superview' in tab
-        assert 'if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }' not in tab
+        assert 'if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }' in tab
         assert 'ngEnableSolidSelection()' in tab and 'UIColor(white: tone, alpha: 1)' in surface
         assert 'sourceView = nil' in surface and 'renderer = nil' in surface
         assert 'ngCapsuleBackdrop' not in setup and 'solidBackdrop' not in renderer and 'ngCapsuleBackdrop' not in surface
@@ -131,7 +131,7 @@ def check():
         assert 'glassView.alpha = 1 - capsuleShare' in shrink
         assert 'selectionView.alpha = 0' in tab and 'selectionView.isHidden = true' in tab
         assert 'self.selectionView.isHidden = false' in shrink
-        assert 'showsSelectedIcon: isSelected,' in tab
+        assert 'showsSelectedIcon: isSelected && !(ngUseHostPosition && isDragging)' in tab
         assert 'progress - 0.72' not in shrink
         edges = section(tab, '    private func updateEdgeLayers(', '    /// One composite of chrome')
         assert 'floor(inWindow.minX * scale)' in edges and 'ceil(inWindow.maxY * scale)' in edges

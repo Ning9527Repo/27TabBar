@@ -117,7 +117,10 @@ def tab(s, rep):
         contentView.bringSubviewToFront(container)''', '''        if isDragging || (ngUseHostPosition && isCollapsingLens) { endDragImmediately() }
         contentView.bringSubviewToFront(container)''')
     s = rep(s, 'showsSelectedIcon: isSelected && !isDragging,',
-            'showsSelectedIcon: isSelected,')
+            'showsSelectedIcon: isSelected && !(ngUseHostPosition && isDragging),')
+    s = rep(s, '''    private func updateHoveredItem(lensCenterX: CGFloat) {
+        guard isDragging, !itemViews.isEmpty else { return }''', '''    private func updateHoveredItem(lensCenterX: CGFloat) {
+        guard !ngUseHostPosition, isDragging, !itemViews.isEmpty else { return }''')
     s = rep(s, '    @objc private func theseusSettingsDidChange() {\n', '''    @objc private func theseusSettingsDidChange() {
         if ngUseHostPosition {
             ngApplyHostedAppearance(animated: false)
@@ -141,26 +144,14 @@ def tab(s, rep):
         if ngUseHostPosition {
             contentView.insertSubview(glassView, aboveSubview: selectionView)
             contentView.bringSubviewToFront(glassView)
-            if let items = itemsContainerView { contentView.bringSubviewToFront(items) }
         } else { container.addSubview(glassView) }
 ''')
     s = rep(s, '\n            container.addSubview(glassView)\n', '''
             if ngUseHostPosition {
                 contentView.insertSubview(glassView, aboveSubview: selectionView)
                 contentView.bringSubviewToFront(glassView)
-                if let items = itemsContainerView { contentView.bringSubviewToFront(items) }
             } else { container.addSubview(glassView) }
 ''')
-    s = rep(s, '''        layoutItemViews()
-        // A native relayout cannot reset a pill currently mapped onto the lens.''', '''        layoutItemViews()
-        if ngUseHostPosition, let glassView = theseusView {
-            contentView.bringSubviewToFront(glassView)
-            if let items = itemsContainerView { contentView.bringSubviewToFront(items) }
-        }
-        // A native relayout cannot reset a pill currently mapped onto the lens.''')
-    s = rep(s, '    private func showCaptureTint(_ shown: Bool) {\n        guard let container = itemsContainerView else { return }', '''    private func showCaptureTint(_ shown: Bool) {
-        guard let container = itemsContainerView else { return }
-        guard !ngUseHostPosition else { return }''')
     s = rep(s, '        glassView.resumeRendering()\n', '''        if ngUseHostPosition { contentView.bringSubviewToFront(glassView) }
         glassView.resumeRendering()
 ''')
@@ -198,8 +189,6 @@ def tab(s, rep):
             updateSelectionViewFrame(animated: false)
         }
         updateItemColors()''')
-    s = rep(s, '        guard isDragging, !itemViews.isEmpty else { return }',
-            '        guard !ngUseHostPosition, isDragging, !itemViews.isEmpty else { return }')
     s = rep(s, '            self.selectionView.layer.transform = LensMorph.transform(mapping: pillLocal, onto: localFrame)', '''            if !self.ngUseHostPosition {
                 self.selectionView.layer.transform = LensMorph.transform(mapping: pillLocal, onto: localFrame)
             }''')
@@ -213,8 +202,8 @@ def tab(s, rep):
         } else {
             fadePill(to: 0, spring: Self.pillFadeOutSpring)
         }''')
-    s = rep(s, '        glassView.setCaptureExcludedViews([ngExcludedBar, selectionView, itemsContainerView].compactMap { $0 })',
-            '        glassView.setCaptureExcludedViews([ngExcludedBar, selectionView, itemsContainerView].compactMap { $0 })')
+    s = rep(s, '        glassView.setCaptureExcludedViews([ngExcludedBar, selectionView].compactMap { $0 })',
+            '        glassView.setCaptureExcludedViews([ngExcludedBar, selectionView].compactMap { $0 })')
     s = rep(s, '''                    self.placeLens(at: containerFrame)
                     if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {''', '''                    self.placeLens(at: containerFrame)
                     if !self.ngUseHostPosition, self.isPillFading, !self.selectionView.isHidden {''')

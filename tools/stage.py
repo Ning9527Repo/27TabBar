@@ -118,7 +118,7 @@ def tabbar(s):
         let exclusions = [self, ngExcludedBar].compactMap { $0 }
         backgroundGlassView.setCaptureExcludedViews(exclusions)
         selectionView.setCaptureExcludedViews(exclusions)
-        theseusView?.setCaptureExcludedViews([ngExcludedBar, selectionView, itemsContainerView].compactMap { $0 })
+        if let bar = ngExcludedBar { theseusView?.setCaptureExcludedViews([bar]) }
         contentView.bounds = bounds''')
     s = replace(s, '            CGRect(x: barFrame.minX + CGFloat(index) * itemWidth, y: 0, width: itemWidth, height: itemHeight)', '''            let rtl = ngUseHostPosition && effectiveUserInterfaceLayoutDirection == .rightToLeft
             let slot = rtl ? itemViews.count - index - 1 : index
@@ -135,7 +135,7 @@ def tabbar(s):
 ''')
     s = replace(s, '        glassView.sourceView = sourceView\n        glassView.isHidden', '''        glassView.sourceView = sourceView
         glassView.ngNonblockingRendering = ngUseHostPosition
-        glassView.setCaptureExcludedViews([ngExcludedBar, selectionView, itemsContainerView].compactMap { $0 })
+        glassView.setCaptureExcludedViews([ngExcludedBar, selectionView].compactMap { $0 })
         glassView.isHidden''')
     s = replace(s, '        case .ended, .cancelled, .failed:\n            finishInteraction(rawX: gesture.location(in: self).x)', '''        case .ended:
             finishInteraction(rawX: gesture.location(in: self).x)
