@@ -118,6 +118,16 @@ def tab(s, rep):
         contentView.bringSubviewToFront(container)''')
     s = rep(s, 'showsSelectedIcon: isSelected && !isDragging,',
             'showsSelectedIcon: isSelected && !(ngUseHostPosition && isDragging),')
+    s = rep(s, '        let restingTint = vibrantTint(selectedTintColor, over: selectionView.renderedCenterColor ?? selectionView.captureVeilColor)\n', '''        let hostedTint = ngHostIsInteracting
+            ? selectedTintColor.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+            : nil
+        let restingTint = hostedTint ?? vibrantTint(selectedTintColor, over: selectionView.renderedCenterColor ?? selectionView.captureVeilColor)
+''')
+    s = rep(s, '''        appliedRestingTint = restingTint
+        let lensTint = vibrantTint(selectedTintColor, over: lensBackdropColor, plus: lensTintBrightening)
+''', '''        appliedRestingTint = restingTint
+        let lensTint = hostedTint ?? vibrantTint(selectedTintColor, over: lensBackdropColor, plus: lensTintBrightening)
+''')
     s = rep(s, '''    private func updateHoveredItem(lensCenterX: CGFloat) {
         guard isDragging, !itemViews.isEmpty else { return }''', '''    private func updateHoveredItem(lensCenterX: CGFloat) {
         guard !ngUseHostPosition, isDragging, !itemViews.isEmpty else { return }''')
