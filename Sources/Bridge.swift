@@ -268,7 +268,7 @@ private struct TabData: Equatable {
               box.width >= 260, box.width >= win.bounds.width * 0.90,
               box.height >= 40, box.height <= 112,
               box.intersects(win.bounds), abs(box.maxY - visibleBottom) <= 12 else { return nil }
-        let y = min(box.maxY, visibleBottom) - win.safeAreaInsets.bottom - 5 - 63
+        let y = min(box.maxY, visibleBottom) - win.safeAreaInsets.bottom - 3 - 63
         let rect = CGRect(x: box.minX + 14, y: y, width: box.width - 28, height: 63)
         let result = parent.convert(rect, from: win)
         return result.width > 0 && result.height > 0 ? result : nil
