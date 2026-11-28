@@ -20,11 +20,11 @@ from build import make_deb, PKG, VERSION, verify_tar_layout
 
 def check():
     verify_vendor()
-    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.21'
+    assert PKG == 'com.ning.27tabbar' and VERSION == '0.2.22'
     for file in [*ROOT.glob('tools/*.py'), *ROOT.glob('tests/*.py')]:
         ast.parse(file.read_text(), filename=str(file))
     bridge = (ROOT/'Sources/Bridge.swift').read_text()
-    assert 'win.safeAreaInsets.bottom - 3 - 63' in bridge
+    assert 'win.safeAreaInsets.bottom - 63' in bridge
     assert 'width: box.width - 28, height: 63' in bridge
     shader = ROOT/'Vendor/Theseus/Sources/Theseus/Shaders/TheseusShaders.metal'
     original = shader.read_bytes()
